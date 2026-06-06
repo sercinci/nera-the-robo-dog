@@ -1,81 +1,353 @@
 [
   {
-    "id": "lobby",
-    "label": "Lobby",
-    "aliases": ["entrance", "reception", "front desk"],
-    "kind": "zone",
-    "floor": 0,
-    "zone": "lobby",
-    "pose": null,
-    "screen": { "template": "wayfinding", "params": {} }
-  },
-  {
-    "id": "robotics-club",
-    "label": "Robotics Club",
-    "aliases": ["robotics", "robot lab", "maker space"],
+    "id": "room-cafe",
+    "label": "Café",
+    "aliases": [
+      "cafe",
+      "café",
+      "coffee",
+      "canteen",
+      "kitchen",
+      "barista",
+      "refreshments"
+    ],
     "kind": "room",
-    "floor": 4,
-    "zone": "east-wing",
+    "floor": 1,
     "pose": null,
-    "screen": { "template": "wayfinding", "params": {} }
+    "screen": {
+      "title": "Café",
+      "subtitle": "Ground floor"
+    }
   },
   {
-    "id": "boardroom",
-    "label": "Boardroom",
-    "aliases": ["board room", "conference room", "meeting room"],
+    "id": "room-lobby",
+    "label": "Reception lobby",
+    "aliases": [
+      "reception",
+      "lobby",
+      "front desk",
+      "entrance",
+      "welcome desk",
+      "ministry of magic"
+    ],
+    "kind": "room",
+    "floor": 1,
+    "pose": null,
+    "screen": {
+      "title": "Reception lobby",
+      "subtitle": "Ground floor"
+    }
+  },
+  {
+    "id": "room-mtgA",
+    "label": "Meeting room A",
+    "aliases": [
+      "meeting room a",
+      "meeting room",
+      "room a"
+    ],
+    "kind": "room",
+    "floor": 1,
+    "pose": null,
+    "screen": {
+      "title": "Meeting room A",
+      "subtitle": "Ground floor"
+    }
+  },
+  {
+    "id": "room-ooA",
+    "label": "Open office A",
+    "aliases": [
+      "open office a",
+      "open space a",
+      "open plan a"
+    ],
+    "kind": "room",
+    "floor": 2,
+    "pose": null,
+    "screen": {
+      "title": "Open office A",
+      "subtitle": "Floor 2"
+    }
+  },
+  {
+    "id": "room-ooB",
+    "label": "Open office B",
+    "aliases": [
+      "open office b",
+      "open space b",
+      "open plan b"
+    ],
+    "kind": "room",
+    "floor": 2,
+    "pose": null,
+    "screen": {
+      "title": "Open office B",
+      "subtitle": "Floor 2"
+    }
+  },
+  {
+    "id": "room-board",
+    "label": "Board room",
+    "aliases": [
+      "board room",
+      "boardroom",
+      "the board room"
+    ],
+    "kind": "room",
+    "floor": 2,
+    "pose": null,
+    "screen": {
+      "title": "Board room",
+      "subtitle": "Floor 2"
+    }
+  },
+  {
+    "id": "room-2A",
+    "label": "Office 2A",
+    "aliases": [
+      "office 2a",
+      "2a"
+    ],
+    "kind": "room",
+    "floor": 2,
+    "pose": null,
+    "screen": {
+      "title": "Office 2A",
+      "subtitle": "Floor 2"
+    }
+  },
+  {
+    "id": "room-3A",
+    "label": "Office 3A",
+    "aliases": [
+      "office 3a",
+      "3a"
+    ],
     "kind": "room",
     "floor": 3,
-    "zone": "west-wing",
     "pose": null,
-    "screen": { "template": "wayfinding", "params": {} }
+    "screen": {
+      "title": "Office 3A",
+      "subtitle": "Floor 3"
+    }
   },
   {
-    "id": "coworking-a",
-    "label": "Coworking Space A",
-    "aliases": ["coworking", "open space", "hot desks"],
-    "kind": "zone",
-    "floor": 2,
-    "zone": "south-wing",
+    "id": "room-3B",
+    "label": "Office 3B",
+    "aliases": [
+      "office 3b",
+      "3b"
+    ],
+    "kind": "room",
+    "floor": 3,
     "pose": null,
-    "screen": { "template": "wayfinding", "params": {} }
+    "screen": {
+      "title": "Office 3B",
+      "subtitle": "Floor 3"
+    }
   },
   {
-    "id": "robotics-meetup-1700",
-    "label": "Robotics Meetup",
-    "aliases": ["robotics meetup", "meetup", "robotics event"],
+    "id": "room-3C",
+    "label": "Office 3C",
+    "aliases": [
+      "office 3c",
+      "3c"
+    ],
+    "kind": "room",
+    "floor": 3,
+    "pose": null,
+    "screen": {
+      "title": "Office 3C",
+      "subtitle": "Floor 3"
+    }
+  },
+  {
+    "id": "room-lounge",
+    "label": "Lounge",
+    "aliases": [
+      "lounge",
+      "break room",
+      "chill out",
+      "relax"
+    ],
+    "kind": "room",
+    "floor": 3,
+    "pose": null,
+    "screen": {
+      "title": "Lounge",
+      "subtitle": "Floor 3"
+    }
+  },
+  {
+    "id": "room-maker",
+    "label": "Makerspace",
+    "aliases": [
+      "makerspace",
+      "maker space",
+      "workshop",
+      "hackerspace",
+      "lab",
+      "fab lab"
+    ],
+    "kind": "room",
+    "floor": 4,
+    "pose": null,
+    "screen": {
+      "title": "Makerspace",
+      "subtitle": "Floor 4 · Makerspace"
+    }
+  },
+  {
+    "id": "room-robotics",
+    "label": "Robotics lab 4B",
+    "aliases": [
+      "robotics lab",
+      "robotics",
+      "robot lab",
+      "lab 4b",
+      "robotics lab 4b"
+    ],
+    "kind": "room",
+    "floor": 4,
+    "pose": null,
+    "screen": {
+      "title": "Robotics lab 4B",
+      "subtitle": "Floor 4 · Makerspace"
+    }
+  },
+  {
+    "id": "room-atrium",
+    "label": "Event atrium",
+    "aliases": [
+      "atrium",
+      "event atrium",
+      "events",
+      "main atrium"
+    ],
+    "kind": "room",
+    "floor": 4,
+    "pose": null,
+    "screen": {
+      "title": "Event atrium",
+      "subtitle": "Floor 4 · Makerspace"
+    }
+  },
+  {
+    "id": "room-workshop",
+    "label": "Workshop 4D",
+    "aliases": [
+      "workshop 4d",
+      "workshop",
+      "seminar room"
+    ],
+    "kind": "room",
+    "floor": 4,
+    "pose": null,
+    "screen": {
+      "title": "Workshop 4D",
+      "subtitle": "Floor 4 · Makerspace"
+    }
+  },
+  {
+    "id": "room-4A",
+    "label": "Office 4A",
+    "aliases": [
+      "office 4a",
+      "4a",
+      "founder office"
+    ],
+    "kind": "room",
+    "floor": 4,
+    "pose": null,
+    "screen": {
+      "title": "Office 4A",
+      "subtitle": "Floor 4 · Makerspace"
+    }
+  },
+  {
+    "id": "evt-001",
+    "label": "StartHack Vienna '26",
+    "aliases": [
+      "hackathon",
+      "starthack",
+      "start hack",
+      "hacking event"
+    ],
     "kind": "event",
     "floor": 4,
-    "zone": "east-wing",
-    "startsAt": "2026-06-07T17:00:00+02:00",
-    "endsAt": "2026-06-07T19:00:00+02:00",
-    "host": "gabriela-m",
     "pose": null,
-    "screen": { "template": "event", "params": {} }
+    "screen": {
+      "title": "StartHack Vienna '26",
+      "subtitle": "Event atrium · Floor 4 · Makerspace"
+    }
   },
   {
-    "id": "interview-1030",
-    "label": "HR Interview",
-    "aliases": ["interview", "job interview", "hr meeting"],
+    "id": "evt-002",
+    "label": "Robotics Club meetup",
+    "aliases": [
+      "robotics",
+      "robotics club",
+      "robot meetup",
+      "robots"
+    ],
+    "kind": "event",
+    "floor": 4,
+    "pose": null,
+    "screen": {
+      "title": "Robotics Club meetup",
+      "subtitle": "Robotics lab 4B · Floor 4 · Makerspace"
+    }
+  },
+  {
+    "id": "evt-003",
+    "label": "Investor breakfast",
+    "aliases": [
+      "investor",
+      "breakfast",
+      "vc meeting",
+      "pitch"
+    ],
     "kind": "event",
     "floor": 2,
-    "zone": "south-wing",
-    "startsAt": "2026-06-07T10:30:00+02:00",
-    "endsAt": "2026-06-07T11:30:00+02:00",
-    "host": "alexander-s",
     "pose": null,
-    "screen": { "template": "event", "params": {} }
+    "screen": {
+      "title": "Investor breakfast",
+      "subtitle": "Board room · Floor 2"
+    }
   },
   {
-    "id": "pitch-day-1400",
-    "label": "Startup Pitch Day",
-    "aliases": ["pitch day", "pitch", "demo day"],
+    "id": "evt-004",
+    "label": "AI & ML workshop",
+    "aliases": [
+      "ai workshop",
+      "machine learning",
+      "ml",
+      "ai session"
+    ],
     "kind": "event",
-    "floor": 3,
-    "zone": "west-wing",
-    "startsAt": "2026-06-07T14:00:00+02:00",
-    "endsAt": "2026-06-07T16:00:00+02:00",
-    "host": "lisa-w",
+    "floor": 4,
     "pose": null,
-    "screen": { "template": "event", "params": {} }
+    "screen": {
+      "title": "AI & ML workshop",
+      "subtitle": "Workshop 4D · Floor 4 · Makerspace"
+    }
+  },
+  {
+    "id": "evt-005",
+    "label": "HOIV community lunch",
+    "aliases": [
+      "lunch",
+      "community lunch",
+      "food",
+      "eat"
+    ],
+    "kind": "event",
+    "floor": 1,
+    "pose": null,
+    "screen": {
+      "title": "HOIV community lunch",
+      "subtitle": "Café · Ground floor"
+    }
   }
 ]
