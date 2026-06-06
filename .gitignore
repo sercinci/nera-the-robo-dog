@@ -23,6 +23,7 @@ build/
 timings.jsonl
 *.log
 logs/
+reply.mp3
 
 # --- Local tooling / OS ---
 .claude/
