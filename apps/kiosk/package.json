@@ -1,0 +1,16 @@
+{
+  "name": "@nera/kiosk",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Browser kiosk: ElevenLabs agent voice loop + Nera face + destination display. Served by the orchestrator.",
+  "type": "module",
+  "scripts": {
+    "build:vendor": "esbuild vendor-entry.js --bundle --format=esm --platform=browser --target=es2022 --outfile=public/vendor/elevenlabs-client.js"
+  },
+  "dependencies": {
+    "@elevenlabs/client": "^0.7.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.5"
+  }
+}

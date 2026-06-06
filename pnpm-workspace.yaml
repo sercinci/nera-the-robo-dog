@@ -1,0 +1,9 @@
+packages:
+  - contracts
+  - skills
+  - apps/*
+  - sinks/*
+
+# Allow esbuild (used by tsx/vitest) to run its install script.
+allowBuilds:
+  esbuild: true
