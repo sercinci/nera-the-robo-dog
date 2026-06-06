@@ -18,7 +18,7 @@ export const checkAppointment: Skill<z.infer<typeof Args>, MatchResult> = {
   parameters: Args,
 
   async handler({ person_id, now }, ctx) {
-    ctx.log("check_appointment", { person_id, now });
+    ctx.log("check_appointment");
 
     // 1. Load person
     const person = ctx.people.find((p) => p.id === person_id);
@@ -52,22 +52,18 @@ export const checkAppointment: Skill<z.infer<typeof Args>, MatchResult> = {
     }
 
     // 5. Valid appointment — resolve destination.
-    // Include startsAt so the orchestrator can detect early arrivals
-    // and trigger a hospitality offer (water/coffee) if wait > 5min.
-    const minutesUntilStart = Math.round((new Date(event.startsAt).getTime() - nowMs) / 60000);
-
     if (person.locatedAt) {
       return {
         destinationId: person.locatedAt,
         confidence: 0.95,
-        via: { startsAt: event.startsAt, minutesUntilStart },
+        via: { person: person_id, event: event.id },
       };
     }
 
     return {
       destinationId: event.id,
       confidence: 0.8,
-      via: { startsAt: event.startsAt, minutesUntilStart },
+      via: { event: event.id },
     };
   },
 };

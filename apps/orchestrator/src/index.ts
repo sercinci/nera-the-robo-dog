@@ -21,6 +21,7 @@ import { SttSession } from "./stt/elevenlabs.js";
 import { streamTts } from "./tts/elevenlabs.js";
 import { initialSession, reduce, type Session } from "./session.js";
 import { resolveQuery, renderDirectoryForAgent } from "./agent/tools.js";
+import { authorizeDoor, makeDoorSink } from "./door.js";
 import { skills } from "@nera/skills";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -102,6 +103,8 @@ async function main() {
   );
 
   const broker = new Broker(server);
+  const door = makeDoorSink(cfg.doorControllerUrl, log);
+  if (!cfg.doorControllerUrl) log.info("DOOR_CONTROLLER_URL unset — door sink runs in dry-run mode.");
   const lives = new Map<string, Live>();
 
   const set = (id: string, s: Session) => {
@@ -204,8 +207,13 @@ async function main() {
 
     l.history = result.agent.messages;
 
+    // Deterministic door authorization from the confidence score (never the LLM).
+    result.destination.openDoor = authorizeDoor(result.destination);
+
     // Emit to all displays the instant we have a destination (fast path).
     if (result.destination.showOnScreen) broker.broadcastDestination(result.destination);
+    // Fire the door unlock in parallel — never blocks voice or screen.
+    door.open(result.destination);
     log.info(
       `"${transcript}" → ${result.destination.status} ${result.destination.destinationId ?? ""} ` +
         `(tool=${result.agent.toolName ?? "none"})`,
@@ -293,7 +301,9 @@ async function main() {
       broker.resolveResult(id, reqId, { status: "error", result: "I had trouble looking that up." });
       return;
     }
+    dest.openDoor = authorizeDoor(dest);
     if (dest.showOnScreen) broker.broadcastDestination(dest);
+    door.open(dest);
     log.info(`[agent] "${query}" → ${dest.status} ${dest.destinationId ?? ""}`);
 
     const result =

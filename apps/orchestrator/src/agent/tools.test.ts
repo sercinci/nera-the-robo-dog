@@ -25,7 +25,7 @@ describe("resolveWithSkill (execute + project, no LLM)", () => {
     const data = await loadData(dataDir);
     const dest = await resolveWithSkill(skills, "find_place", { query: "robotics club" }, data, meta);
     expect(dest.status).toBe("resolved");
-    expect(dest.destinationId).toBe("robotics-club");
+    expect(dest.destinationId).toBe("evt-002");
     expect(dest.screen.title).toBeTruthy();
   });
 
@@ -33,8 +33,8 @@ describe("resolveWithSkill (execute + project, no LLM)", () => {
     const data = await loadData(dataDir);
     const dest = await resolveWithSkill(skills, "find_person", { name: "gabriela" }, data, meta);
     expect(dest.status).toBe("resolved");
-    expect(dest.destinationId).toBe("robotics-club");
-    expect(dest.via.person).toBe("gabriela-m");
+    expect(dest.destinationId).toBe("room-3C");
+    expect(dest.via.person).toBe("gabriela-n");
   });
 
   it("returns a no_match Destination (never blank screen) for an unknown query", async () => {
@@ -63,17 +63,17 @@ describe("buildSystemPrompt", () => {
 describe("resolveQuery (place-or-person, for the EL agent's show_destination tool)", () => {
   it("resolves a place query", async () => {
     const data = await loadData(dataDir);
-    const d = await resolveQuery(skills, "the robotics club", data, meta);
+    const d = await resolveQuery(skills, "robotics club", data, meta);
     expect(d.status).toBe("resolved");
-    expect(d.destinationId).toBe("robotics-club");
+    expect(d.destinationId).toBe("evt-002");
   });
 
   it("resolves a person query (falls through to find_person)", async () => {
     const data = await loadData(dataDir);
     const d = await resolveQuery(skills, "Gabriela", data, meta);
     expect(d.status).toBe("resolved");
-    expect(d.destinationId).toBe("robotics-club");
-    expect(d.via.person).toBe("gabriela-m");
+    expect(d.destinationId).toBe("room-3C");
+    expect(d.via.person).toBe("gabriela-n");
   });
 
   it("returns no_match for nonsense", async () => {
@@ -88,9 +88,9 @@ describe("renderDirectoryForAgent (dynamic variable for the EL agent)", () => {
     const data = await loadData(dataDir);
     const txt = renderDirectoryForAgent(data);
     expect(txt).toContain("Robotics Club");
-    expect(txt).toContain("Gabriela Müller");
-    expect(txt).not.toContain("robotics-club"); // no internal ids leaked to the voice
-    expect(txt).not.toContain("gabriela-m");
+    expect(txt).toContain("Gabriela Novak");
+    expect(txt).not.toContain("evt-002"); // no internal ids leaked to the voice
+    expect(txt).not.toContain("gabriela-n");
   });
 });
 

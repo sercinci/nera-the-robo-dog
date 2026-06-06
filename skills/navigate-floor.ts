@@ -50,7 +50,7 @@ export const navigateFloor: Skill<z.infer<typeof Args>, NavResult> = {
   parameters: Args,
 
   async handler({ destinationId, floor, currentPose }, ctx) {
-    ctx.log("navigate_floor", { destinationId, floor });
+    ctx.log(`navigate_floor dest=${destinationId} floor=${floor}`);
 
     // Load floor-specific waypoints.json
     const waypointsPath = join(
@@ -64,19 +64,19 @@ export const navigateFloor: Skill<z.infer<typeof Args>, NavResult> = {
       const raw = readFileSync(waypointsPath, "utf-8");
       waypointsFile = WaypointsFileSchema.parse(JSON.parse(raw));
     } catch {
-      ctx.log("navigate_floor: waypoints file not found", { floor, waypointsPath });
+      ctx.log(`navigate_floor: waypoints file not found floor=${floor} path=${waypointsPath}`);
       return { destinationId: null, confidence: 0 };
     }
 
     const wp = waypointsFile.waypoints[destinationId];
     if (!wp) {
-      ctx.log("navigate_floor: destinationId not in waypoints", { destinationId, floor });
+      ctx.log(`navigate_floor: destinationId not in waypoints dest=${destinationId} floor=${floor}`);
       return { destinationId: null, confidence: 0 };
     }
 
     // Null coords = floor not yet mapped
     if (wp.x === null || wp.y === null || wp.yaw === null) {
-      ctx.log("navigate_floor: waypoint not yet mapped", { destinationId, floor });
+      ctx.log(`navigate_floor: waypoint not yet mapped dest=${destinationId} floor=${floor}`);
       return { destinationId: null, confidence: 0 };
     }
 
