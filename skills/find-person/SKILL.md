@@ -37,6 +37,16 @@ name: string   — the person's name or nickname, exactly as the visitor said it
 ## After This Skill
 Always follow with `check_appointment(person_id, now)` before routing.
 
+## No-Match Handoff (important)
+This skill only IDENTIFIES — it does not fetch a human. When it returns
+`{ destinationId: null, confidence: 0 }` (no match), the **orchestrator** is what
+actually pages a person: the deterministic `notify-host` sink fires on the terminal
+give-up state (after Nera's one clarifying question), so the spoken promise
+"let me get someone for you" is backed by a real staff notification (`HOST_NOTIFY_URL`,
+or a dry-run log when unset). Do NOT add human-fetching logic to this skill — it would
+break the identify-only contract and wouldn't fire reliably under the single-round agent.
+See `apps/orchestrator/src/notify-host.ts`.
+
 ---
 
 ## Return Values

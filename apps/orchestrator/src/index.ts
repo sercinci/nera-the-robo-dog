@@ -22,6 +22,7 @@ import { streamTts } from "./tts/elevenlabs.js";
 import { initialSession, reduce, type Session } from "./session.js";
 import { resolveQuery, renderDirectoryForAgent } from "./agent/tools.js";
 import { authorizeDoor, makeDoorSink } from "./door.js";
+import { makeNotifyHostSink, shouldNotifyHost } from "./notify-host.js";
 import { skills } from "@nera/skills";
 import { startDoorBridge } from "./intercom/door-bridge.js";
 
@@ -106,6 +107,8 @@ async function main() {
   const broker = new Broker(server);
   const door = makeDoorSink(cfg.doorControllerUrl, log);
   if (!cfg.doorControllerUrl) log.info("DOOR_CONTROLLER_URL unset — door sink runs in dry-run mode.");
+  const hostNotifier = makeNotifyHostSink(cfg.hostNotifyUrl, log);
+  if (!cfg.hostNotifyUrl) log.info("HOST_NOTIFY_URL unset — notify-host sink runs in dry-run mode.");
   const lives = new Map<string, Live>();
 
   // Door path: Ring intercom <-> server-side EL agent <-> browser. No-ops without RING_REFRESH_TOKEN.
@@ -227,6 +230,9 @@ async function main() {
     dispatch(l, { type: "RESOLVED", status: result.destination.status });
 
     if (l.session.phase === "RESPOND") {
+      // Terminal give-up: clarify already spent and still not resolved. Nera says
+      // "let me get someone" — so actually page a human (parallel, never blocks TTS).
+      if (result.destination.status !== "resolved") hostNotifier.notify(result.destination);
       await speak(l, result.replyText, () => result.turn.mark("ttsFirstAudioAt"));
       reportTimings(l, result.turn);
       dispatch(l, { type: "RESPOND_DONE" });
@@ -271,6 +277,7 @@ async function main() {
     const l = lives.get(id);
     if (!l) return;
     teardown(l); // cancel anything in flight
+    hostNotifier.reset(id); // new visitor → allow paging again
     dispatch(l, { type: "RING" });
     broker.playWelcome(id);
   });
@@ -308,6 +315,9 @@ async function main() {
     dest.openDoor = authorizeDoor(dest);
     if (dest.showOnScreen) broker.broadcastDestination(dest);
     door.open(dest);
+    // EL agent owns its own clarify loop; we can't see its counter, so page on a
+    // no_match (de-duped per session so a multi-try conversation pages at most once).
+    if (shouldNotifyHost(dest)) hostNotifier.notify(dest);
     log.info(`[agent] "${query}" → ${dest.status} ${dest.destinationId ?? ""}`);
 
     const result =
