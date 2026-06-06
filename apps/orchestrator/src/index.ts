@@ -319,19 +319,22 @@ async function main() {
   // open_door tool relayed from the browser agent: physically unlock the Ring intercom.
   // Only meaningful during an active door call; browser-only sessions have none.
   broker.on("unlock", async (id: string, reqId: unknown) => {
-    if (!doorIntercom?.inCall) {
-      broker.resolveResult(id, reqId, { status: "no_door", result: "There's no door to open here." });
-      return;
+    log.info(`[agent] open_door requested (live Ring call: ${doorIntercom?.inCall ?? false})`);
+    if (doorIntercom?.inCall) {
+      try {
+        await doorIntercom.unlock();
+        log.info("[agent] 🔓 intercom unlocked (open_door)");
+      } catch (e) {
+        log.error("[agent] unlock failed:", (e as Error).message);
+        broker.resolveResult(id, reqId, { status: "error", result: "I couldn't open the door just now." });
+        return;
+      }
+    } else {
+      // Browser simulation (no physical buzz): pretend-open so the demo shows the snack.
+      log.info("[agent] 🔓 simulated door open (no live Ring call — browser demo)");
     }
-    try {
-      await doorIntercom.unlock();
-      log.info("[agent] 🔓 intercom unlocked (open_door)");
-      broker.doorState("unlocked");
-      broker.resolveResult(id, reqId, { status: "ok", result: "The door is open — come on in!" });
-    } catch (e) {
-      log.error("[agent] unlock failed:", (e as Error).message);
-      broker.resolveResult(id, reqId, { status: "error", result: "I couldn't open the door just now." });
-    }
+    broker.doorState("unlocked"); // -> browser snack
+    broker.resolveResult(id, reqId, { status: "ok", result: "The door is open — come on in!" });
   });
 
   broker.on("disconnect", (id: string) => {

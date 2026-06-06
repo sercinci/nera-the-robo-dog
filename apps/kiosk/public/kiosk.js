@@ -14,7 +14,24 @@ const els = {
   title: $("card-title"), subtitle: $("card-subtitle"), marker: $("card-marker"),
   kicker: $("card-kicker"), ring: $("ring"), phase: $("phase"),
   transcript: $("transcript"), latency: $("latency"), conn: $("conn"),
+  snack: $("snack"),
 };
+
+let snackTimer;
+function showSnack(msg, opts = {}) {
+  const ms = opts.ms ?? 6000;
+  els.snack.textContent = msg;
+  els.snack.classList.toggle("ring", opts.kind === "ring"); // blue variant for the buzz
+  els.snack.classList.remove("hidden");
+  // force reflow so the transition runs even if already visible
+  void els.snack.offsetWidth;
+  els.snack.classList.add("show");
+  clearTimeout(snackTimer);
+  snackTimer = setTimeout(() => {
+    els.snack.classList.remove("show");
+    setTimeout(() => els.snack.classList.add("hidden"), 300);
+  }, ms);
+}
 
 let ws;
 let conv = null;
@@ -71,13 +88,21 @@ function playPcm(b64) {
   pbTime += buf.duration;
 }
 function onDoorState(state) {
-  if (state === "ringing") { els.phase.textContent = "DOOR"; els.status.textContent = "🔔 Door buzz — connecting…"; }
+  if (state === "ringing") {
+    els.phase.textContent = "DOOR";
+    els.face.classList.add("listening");
+    els.status.textContent = "Someone's at the door…";
+    showSnack("🔔 Someone's at the door!", { kind: "ring" });
+  }
   else if (state === "active" || state === "listening") {
     els.phase.textContent = "DOOR"; els.face.classList.add("listening"); els.face.classList.remove("talking");
     els.status.textContent = "Listening at the door…";
   } else if (state === "speaking") {
     els.face.classList.add("talking"); els.face.classList.remove("listening");
     els.status.textContent = "Nera is speaking…";
+  } else if (state === "unlocked") {
+    showSnack("🔓 Door open — come on in!");
+    els.status.textContent = "Door opened";
   } else if (state === "idle") {
     showIdle();
   }

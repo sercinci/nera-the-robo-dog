@@ -20,12 +20,17 @@ body {
 .hidden { display: none !important; }
 
 .face {
-  font-size: clamp(120px, 28vw, 320px);
-  filter: drop-shadow(0 8px 40px rgba(88, 166, 255, 0.25));
+  filter: drop-shadow(0 10px 36px rgba(184, 115, 51, 0.35));
   transition: transform 0.2s ease;
 }
+.face svg {
+  display: block;
+  margin: 0 auto;
+  width: clamp(180px, 34vw, 380px);
+  height: auto;
+}
 .face.talking { animation: bob 0.5s ease-in-out infinite; }
-.face.listening { transform: scale(1.06); filter: drop-shadow(0 8px 50px rgba(63, 185, 80, 0.4)); }
+.face.listening { transform: scale(1.06); filter: drop-shadow(0 10px 48px rgba(63, 185, 80, 0.45)); }
 @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
 
 .status { margin-top: 1rem; font-size: clamp(18px, 2.5vw, 28px); color: var(--muted); }
@@ -51,3 +56,33 @@ body {
 .latency { color: var(--ok); font-variant-numeric: tabular-nums; }
 .conn { color: var(--muted); margin-left: auto; }
 .conn.up { color: var(--ok); }
+
+/* Door-opened snack/toast */
+.snack {
+  position: fixed;
+  left: 50%;
+  bottom: 84px;
+  transform: translateX(-50%) translateY(20px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--ok);
+  color: #04140a;
+  font-size: clamp(18px, 2.2vw, 24px);
+  font-weight: 700;
+  padding: 16px 28px;
+  border-radius: 14px;
+  box-shadow: 0 12px 48px rgba(63, 185, 80, 0.45);
+  opacity: 0;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  z-index: 100;
+  pointer-events: none;
+}
+.snack.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.snack.hidden { display: none; }
+/* Blue variant for the incoming-buzz banner (green default = door opened) */
+.snack.ring {
+  background: var(--accent);
+  color: #04121f;
+  box-shadow: 0 12px 48px rgba(88, 166, 255, 0.5);
+}

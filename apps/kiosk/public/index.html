@@ -10,7 +10,53 @@
     <main id="stage">
       <!-- Idle: Nera's face. Switches to the destination card when info is pushed. -->
       <section id="nera" class="panel">
-        <div id="face" class="face">🐶</div>
+        <div id="face" class="face" aria-label="Nera, a copper English Cocker Spaniel">
+          <svg viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <radialGradient id="coat" cx="50%" cy="36%" r="72%">
+                <stop offset="0%" stop-color="#CE863B" />
+                <stop offset="58%" stop-color="#B56C28" />
+                <stop offset="100%" stop-color="#8F4E18" />
+              </radialGradient>
+              <linearGradient id="earGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#9C571F" />
+                <stop offset="100%" stop-color="#743D12" />
+              </linearGradient>
+              <radialGradient id="muzzleGrad" cx="50%" cy="38%" r="72%">
+                <stop offset="0%" stop-color="#ECC68F" />
+                <stop offset="100%" stop-color="#D2A05F" />
+              </radialGradient>
+            </defs>
+
+            <!-- long, low-set, silky floppy ears (hang past the face) -->
+            <path class="ear" fill="url(#earGrad)" d="M88 72 C 40 66, 24 122, 36 182 C 42 212, 74 220, 88 198 C 72 168, 80 116, 98 96 C 96 84, 94 78, 88 72 Z" />
+            <path class="ear" fill="url(#earGrad)" d="M152 72 C 200 66, 216 122, 204 182 C 198 212, 166 220, 152 198 C 168 168, 160 116, 142 96 C 144 84, 146 78, 152 72 Z" />
+
+            <!-- domed head -->
+            <path fill="url(#coat)" d="M120 38 C 74 38, 56 80, 58 118 C 60 158, 90 186, 120 186 C 150 186, 180 158, 182 118 C 184 80, 166 38, 120 38 Z" />
+            <!-- forelock tuft on the dome -->
+            <path fill="#CE863B" d="M120 36 C 110 28, 99 40, 110 50 C 100 47, 110 60, 120 55 C 130 60, 140 47, 130 50 C 141 40, 130 28, 120 36 Z" />
+
+            <!-- muzzle + cream throat -->
+            <ellipse cx="120" cy="150" rx="40" ry="33" fill="url(#muzzleGrad)" />
+            <path fill="#F4E9D6" d="M103 176 C 112 187, 128 187, 137 176 C 130 172, 110 172, 103 176 Z" />
+
+            <!-- eyes -->
+            <ellipse cx="97" cy="113" rx="12.5" ry="14.5" fill="#2A1B10" />
+            <ellipse cx="143" cy="113" rx="12.5" ry="14.5" fill="#2A1B10" />
+            <circle cx="101" cy="108" r="3.6" fill="#fff" opacity="0.92" />
+            <circle cx="147" cy="108" r="3.6" fill="#fff" opacity="0.92" />
+            <path d="M82 97 Q97 89 112 97" stroke="#7A4015" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.45" />
+            <path d="M128 97 Q143 89 158 97" stroke="#7A4015" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.45" />
+
+            <!-- nose + mouth + little tongue -->
+            <ellipse cx="120" cy="137" rx="12" ry="9" fill="#241C18" />
+            <ellipse cx="116" cy="134" rx="3" ry="2" fill="#6a5a52" opacity="0.7" />
+            <path d="M120 146 L120 158" stroke="#5A4326" stroke-width="2.5" fill="none" stroke-linecap="round" />
+            <path d="M120 158 Q106 170 96 160 M120 158 Q134 170 144 160" stroke="#5A4326" stroke-width="2.5" fill="none" stroke-linecap="round" />
+            <path d="M113 161 Q120 177 127 161 Q120 167 113 161 Z" fill="#E27B86" />
+          </svg>
+        </div>
         <div id="status" class="status">Tap the doorbell to begin</div>
       </section>
 
@@ -29,6 +75,8 @@
       <span id="latency" class="latency"></span>
       <span id="conn" class="conn">connecting…</span>
     </footer>
+
+    <div id="snack" class="snack hidden" role="status" aria-live="polite"></div>
 
     <script type="module" src="/kiosk.js"></script>
   </body>

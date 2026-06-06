@@ -44,13 +44,12 @@ export class ConvaiSession {
   constructor(deps: ConvaiDeps, handlers: ConvaiHandlers) {
     const params = new URLSearchParams({
       agent_id: deps.agentId,
-      source: "nera-orchestrator",
-      version: "1",
+      source: "js_sdk",
     });
-    this.ws = new WebSocket(
-      `wss://api.elevenlabs.io/v1/convai/conversation?${params.toString()}`,
-      deps.apiKey ? { headers: { "xi-api-key": deps.apiKey } } : undefined,
-    );
+    // Public agent: connect anonymously, exactly like the browser SDK. Sending a
+    // scoped xi-api-key here is REJECTED with 403. (For a private agent we'd mint a
+    // signed URL via the API instead.)
+    this.ws = new WebSocket(`wss://api.elevenlabs.io/v1/convai/conversation?${params.toString()}`);
 
     this.ws.on("open", () => {
       this.open = true;
