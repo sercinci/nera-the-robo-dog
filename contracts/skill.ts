@@ -29,8 +29,9 @@ export interface SkillCtx {
   people: Person[];
   /** The live turn. */
   session: { id: string; transcript: string };
-  /** Stamp a latency checkpoint (shows up in the Timings block / REPORT.md). */
-  log: (stage: string) => void;
+  /** Stamp a latency checkpoint (shows up in the Timings block / REPORT.md).
+   *  Optional `detail` is for structured debug context (ignored by the timer). */
+  log: (stage: string, detail?: unknown) => void;
 }
 
 /**

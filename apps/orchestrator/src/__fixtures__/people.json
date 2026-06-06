@@ -1,0 +1,26 @@
+[
+  {
+    "id": "gabriela-m",
+    "name": "Gabriela Müller",
+    "aliases": ["gabriela", "gaby", "gabi"],
+    "role": "Robotics Lead",
+    "locatedAt": "robotics-club",
+    "event": "robotics-meetup-1700"
+  },
+  {
+    "id": "alexander-s",
+    "name": "Alexander Sanchez de la Cerda",
+    "aliases": ["alexander", "alex", "the founder"],
+    "role": "Founder & Owner, HOIV",
+    "locatedAt": "ministry-of-magic",
+    "event": null
+  },
+  {
+    "id": "vlad-p",
+    "name": "Vlad Petrea",
+    "aliases": ["vlad"],
+    "role": "Senior Builder",
+    "locatedAt": "makerspace",
+    "event": null
+  }
+]

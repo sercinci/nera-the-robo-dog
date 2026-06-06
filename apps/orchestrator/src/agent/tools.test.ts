@@ -5,7 +5,8 @@ import { skills } from "@nera/skills";
 import { loadData } from "../data.js";
 import { toToolSpecs, resolveWithSkill, buildSystemPrompt, noMatchDestination, resolveQuery, renderDirectoryForAgent } from "./tools.js";
 
-const dataDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../data");
+// Stable fixture (not the live data/ files) so directory edits never break tests.
+const dataDir = resolve(dirname(fileURLToPath(import.meta.url)), "../__fixtures__");
 const meta = { sessionId: "t", transcript: "x" };
 
 describe("toToolSpecs", () => {

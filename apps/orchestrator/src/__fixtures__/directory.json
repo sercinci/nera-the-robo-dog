@@ -1,0 +1,45 @@
+[
+  {
+    "id": "ministry-of-magic",
+    "label": "Ministry of Magic (Front Desk)",
+    "aliases": ["reception", "front desk", "not reception", "the desk", "help"],
+    "kind": "zone",
+    "floor": 0,
+    "zone": "entrance",
+    "pose": null,
+    "screen": { "title": "Ministry of Magic", "subtitle": "Ground floor · Entrance", "routeAssetId": "route-entrance", "mapMarker": "M0" }
+  },
+  {
+    "id": "robotics-club",
+    "label": "Robotics Club",
+    "aliases": ["robotics", "robot club", "makerspace robots", "robotics meetup"],
+    "kind": "room",
+    "floor": 4,
+    "zone": "east-wing",
+    "pose": null,
+    "screen": { "title": "Robotics Club", "subtitle": "4th floor · East Wing", "routeAssetId": "route-4-east", "mapMarker": "R4" }
+  },
+  {
+    "id": "makerspace",
+    "label": "Makerspace",
+    "aliases": ["maker space", "workshop", "hackerspace", "lab"],
+    "kind": "room",
+    "floor": 4,
+    "zone": "west-wing",
+    "pose": null,
+    "screen": { "title": "Makerspace", "subtitle": "4th floor · West Wing", "routeAssetId": "route-4-west", "mapMarker": "W4" }
+  },
+  {
+    "id": "robotics-meetup-1700",
+    "label": "Robotics Meetup",
+    "aliases": ["the meetup", "robotics event", "robot talk"],
+    "kind": "event",
+    "floor": 4,
+    "zone": "east-wing",
+    "startsAt": "2026-06-07T17:00:00Z",
+    "endsAt": "2026-06-07T19:00:00Z",
+    "host": "gabriela-m",
+    "pose": null,
+    "screen": { "title": "Robotics Meetup · 17:00", "subtitle": "4th floor · East Wing (Robotics Club)", "routeAssetId": "route-4-east", "mapMarker": "R4" }
+  }
+]
