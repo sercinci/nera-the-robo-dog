@@ -1,0 +1,22 @@
+{
+  "name": "agent-runner",
+  "version": "0.1.0",
+  "description": "Nera voice agent — LLM loop that calls skills and emits Destination events",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "zod": "^3.23.8",
+    "zod-to-json-schema": "^3.23.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.5.4",
+    "@types/node": "^22.0.0"
+  }
+}

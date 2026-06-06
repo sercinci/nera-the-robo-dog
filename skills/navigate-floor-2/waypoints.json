@@ -1,0 +1,21 @@
+{
+  "_comment": "Floor 2 waypoints in Nav2 map frame. Units: meters (x,y), degrees (yaw).",
+  "_source": "Extract from: tools/extract-waypoints.py --bag 'LiDAR data/debug_big_walkaround_20260514_184542_0.mcap' --floor 2",
+  "_status": "PLACEHOLDER — floor 2 not yet in bag. Requires on-site mapping run.",
+  "waypoints": {
+    "coworking-a": {
+      "x": null,
+      "y": null,
+      "yaw": null,
+      "label": "Coworking Space A",
+      "note": "PLACEHOLDER — map Floor 2 and run extract-waypoints.py"
+    },
+    "interview-1030": {
+      "x": null,
+      "y": null,
+      "yaw": null,
+      "label": "HR Interview Room",
+      "note": "PLACEHOLDER — same floor as coworking-a, south wing"
+    }
+  }
+}

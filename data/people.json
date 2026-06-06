@@ -8,19 +8,35 @@
     "event": "robotics-meetup-1700"
   },
   {
+    "id": "max-b",
+    "name": "Max Bauer",
+    "aliases": ["max"],
+    "role": "Job Applicant",
+    "locatedAt": null,
+    "event": "interview-1030"
+  },
+  {
+    "id": "lisa-w",
+    "name": "Lisa Wagner",
+    "aliases": ["lisa"],
+    "role": "Investor",
+    "locatedAt": "boardroom",
+    "event": "pitch-day-1400"
+  },
+  {
     "id": "alexander-s",
-    "name": "Alexander Sanchez de la Cerda",
-    "aliases": ["alexander", "alex", "the founder"],
-    "role": "Founder & Owner, HOIV",
-    "locatedAt": "ministry-of-magic",
+    "name": "Alexander Steiner",
+    "aliases": ["alex", "alexander"],
+    "role": "HR Manager",
+    "locatedAt": "coworking-a",
     "event": null
   },
   {
-    "id": "vlad-p",
-    "name": "Vlad Petrea",
-    "aliases": ["vlad"],
-    "role": "Senior Builder",
-    "locatedAt": "makerspace",
+    "id": "thomas-k",
+    "name": "Thomas Klein",
+    "aliases": ["thomas", "tom"],
+    "role": "Founder",
+    "locatedAt": "boardroom",
     "event": null
   }
 ]
