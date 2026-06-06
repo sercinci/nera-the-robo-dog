@@ -1,26 +1,181 @@
 [
   {
-    "id": "gabriela-m",
-    "name": "Gabriela Müller",
-    "aliases": ["gabriela", "gaby", "gabi"],
-    "role": "Robotics Lead",
-    "locatedAt": "robotics-club",
-    "event": "robotics-meetup-1700"
-  },
-  {
     "id": "alexander-s",
     "name": "Alexander Sanchez de la Cerda",
-    "aliases": ["alexander", "alex", "the founder"],
+    "aliases": [
+      "alex",
+      "alexander",
+      "founder",
+      "owner",
+      "boss",
+      "hoiv founder"
+    ],
     "role": "Founder & Owner, HOIV",
-    "locatedAt": "ministry-of-magic",
-    "event": null
+    "locatedAt": "room-4A",
+    "event": null,
+    "photo": "avatar_alexander.png"
   },
   {
     "id": "vlad-p",
     "name": "Vlad Petrea",
-    "aliases": ["vlad"],
-    "role": "Senior Builder",
-    "locatedAt": "makerspace",
-    "event": null
+    "aliases": [
+      "vlad",
+      "builder",
+      "senior builder",
+      "makerspace guy"
+    ],
+    "role": "Senior Builder, HOIV",
+    "locatedAt": "room-maker",
+    "event": null,
+    "photo": "avatar_vlad.png"
+  },
+  {
+    "id": "gabriela-n",
+    "name": "Gabriela Novak",
+    "aliases": [
+      "gabriela",
+      "gabi",
+      "partnerships",
+      "head of partnerships"
+    ],
+    "role": "Head of Partnerships, HOIV",
+    "locatedAt": "room-3C",
+    "event": null,
+    "photo": "avatar_gabriela.png"
+  },
+  {
+    "id": "markus-h",
+    "name": "Markus Huber",
+    "aliases": [
+      "markus",
+      "robotics engineer",
+      "techforge",
+      "robot guy"
+    ],
+    "role": "Robotics Engineer, TechForge GmbH",
+    "locatedAt": "room-robotics",
+    "event": null,
+    "photo": "avatar_markus.png"
+  },
+  {
+    "id": "sofia-r",
+    "name": "Sofia Reiter",
+    "aliases": [
+      "sofia",
+      "ux",
+      "designer",
+      "pixelcraft",
+      "ux designer"
+    ],
+    "role": "UX Designer, PixelCraft Studio",
+    "locatedAt": "room-3A",
+    "event": null,
+    "photo": "avatar_sofia.png"
+  },
+  {
+    "id": "jonas-b",
+    "name": "Jonas Berger",
+    "aliases": [
+      "jonas",
+      "venture",
+      "investor",
+      "alpine",
+      "vc",
+      "alpine ventures"
+    ],
+    "role": "Venture Partner, Alpine Ventures",
+    "locatedAt": "room-board",
+    "event": null,
+    "photo": "avatar_jonas.png"
+  },
+  {
+    "id": "lena-w",
+    "name": "Lena Wiesner",
+    "aliases": [
+      "lena",
+      "developer",
+      "dev",
+      "codenest",
+      "full stack"
+    ],
+    "role": "Full-Stack Developer, CodeNest",
+    "locatedAt": "room-ooA",
+    "event": null,
+    "photo": "avatar_lena.png"
+  },
+  {
+    "id": "tobias-g",
+    "name": "Tobias Gruber",
+    "aliases": [
+      "tobias",
+      "tobi",
+      "ai research",
+      "neuralpath",
+      "ai lead"
+    ],
+    "role": "AI Research Lead, NeuralPath AG",
+    "locatedAt": "room-workshop",
+    "event": null,
+    "photo": "avatar_tobias.png"
+  },
+  {
+    "id": "marina-c",
+    "name": "Marina Castillo",
+    "aliases": [
+      "marina",
+      "marketing",
+      "brandspark",
+      "marketing director"
+    ],
+    "role": "Marketing Director, BrandSpark",
+    "locatedAt": "room-3B",
+    "event": null,
+    "photo": "avatar_marina.png"
+  },
+  {
+    "id": "felix-z",
+    "name": "Felix Zimmermann",
+    "aliases": [
+      "felix",
+      "hardware",
+      "robotics club",
+      "hacker",
+      "club"
+    ],
+    "role": "Hardware Hacker, HOIV · Robotics Club",
+    "locatedAt": "room-maker",
+    "event": null,
+    "photo": "avatar_felix.png"
+  },
+  {
+    "id": "anna-k",
+    "name": "Anna Kowalski",
+    "aliases": [
+      "anna",
+      "ceo",
+      "greenloop",
+      "green loop"
+    ],
+    "role": "CEO, GreenLoop",
+    "locatedAt": "room-2A",
+    "event": null,
+    "photo": "avatar_anna.png"
+  },
+  {
+    "id": "david-m",
+    "name": "David Müller",
+    "aliases": [
+      "david",
+      "cafe",
+      "coffee",
+      "barista",
+      "drinks",
+      "refreshment",
+      "canteen"
+    ],
+    "role": "Barista & Community Host, HOIV Café",
+    "locatedAt": "room-cafe",
+    "event": null,
+    "photo": "avatar_david.png"
   }
 ]
