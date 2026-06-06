@@ -1,0 +1,31 @@
+# --- Large / private assets (do NOT commit) ---
+# ROS 2 / Foxglove recordings (can be multi-GB; GitHub rejects >100MB)
+*.mcap
+debug_big_walkaround_20260514_184542_0.mcap
+
+# WhatsApp-shared media (images + videos)
+WhatsApp *
+*.WhatsApp.*
+
+# --- Secrets (case requirement: no secrets in repo) ---
+.env
+.env.*
+!.env.example
+
+# --- Node / TypeScript ---
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.pnpm-store/
+
+# --- Generated runtime artifacts ---
+timings.jsonl
+*.log
+logs/
+
+# --- Local tooling / OS ---
+.claude/
+.DS_Store
+.vscode/
+.idea/
