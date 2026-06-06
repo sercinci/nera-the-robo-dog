@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nera — HOIV Concierge</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main id="stage">
+      <!-- Idle: Nera's face. Switches to the destination card when info is pushed. -->
+      <section id="nera" class="panel">
+        <div id="face" class="face">🐶</div>
+        <div id="status" class="status">Tap the doorbell to begin</div>
+      </section>
+
+      <section id="card" class="panel card hidden">
+        <div class="card-kicker" id="card-kicker">Destination</div>
+        <h1 class="card-title" id="card-title"></h1>
+        <p class="card-subtitle" id="card-subtitle"></p>
+        <div class="card-marker" id="card-marker"></div>
+      </section>
+    </main>
+
+    <footer id="hud">
+      <button id="ring">🔔 Ring doorbell</button>
+      <span id="phase" class="pill">IDLE</span>
+      <span id="transcript" class="transcript"></span>
+      <span id="latency" class="latency"></span>
+      <span id="conn" class="conn">connecting…</span>
+    </footer>
+
+    <script type="module" src="/kiosk.js"></script>
+  </body>
+</html>

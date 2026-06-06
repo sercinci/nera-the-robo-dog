@@ -1,0 +1,53 @@
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --accent: #58a6ff;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --ok: #3fb950;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+#stage { flex: 1; display: grid; place-items: center; position: relative; }
+.panel { width: min(90vw, 900px); text-align: center; }
+.hidden { display: none !important; }
+
+.face {
+  font-size: clamp(120px, 28vw, 320px);
+  filter: drop-shadow(0 8px 40px rgba(88, 166, 255, 0.25));
+  transition: transform 0.2s ease;
+}
+.face.talking { animation: bob 0.5s ease-in-out infinite; }
+.face.listening { transform: scale(1.06); filter: drop-shadow(0 8px 50px rgba(63, 185, 80, 0.4)); }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+
+.status { margin-top: 1rem; font-size: clamp(18px, 2.5vw, 28px); color: var(--muted); }
+
+.card { background: var(--panel); border-radius: 24px; padding: 4vh 4vw; box-shadow: 0 20px 80px rgba(0,0,0,0.5); }
+.card-kicker { color: var(--accent); text-transform: uppercase; letter-spacing: 0.15em; font-size: 1rem; }
+.card-title { font-size: clamp(40px, 8vw, 110px); margin: 0.2em 0; }
+.card-subtitle { font-size: clamp(22px, 3.5vw, 44px); color: var(--muted); margin: 0; }
+.card-marker { margin-top: 1rem; font-size: clamp(28px, 5vw, 64px); color: var(--accent); font-weight: 700; }
+
+#hud {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; background: #0a0d12; border-top: 1px solid #21262d;
+  font-size: 14px; flex-wrap: wrap;
+}
+#ring {
+  background: var(--accent); color: #04121f; border: 0; border-radius: 10px;
+  padding: 10px 16px; font-size: 16px; font-weight: 700; cursor: pointer;
+}
+#ring:active { transform: translateY(1px); }
+.pill { background: #21262d; border-radius: 999px; padding: 4px 12px; color: var(--muted); font-variant: small-caps; }
+.transcript { color: var(--text); flex: 1; min-width: 140px; opacity: 0.85; }
+.latency { color: var(--ok); font-variant-numeric: tabular-nums; }
+.conn { color: var(--muted); margin-left: auto; }
+.conn.up { color: var(--ok); }
