@@ -22,7 +22,6 @@ const Schema = z.object({
 
   GO2_FOXGLOVE_URL: z.string().optional(),
   YODECK_API_TOKEN: z.string().optional(),
-  DOOR_CONTROLLER_URL: z.string().optional(),
 });
 
 export interface Config {
@@ -40,7 +39,6 @@ export interface Config {
   openrouterModel: string;
   go2FoxgloveUrl?: string;
   yodeckApiToken?: string;
-  doorControllerUrl?: string;
 }
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
@@ -60,6 +58,5 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     openrouterModel: e.OPENROUTER_MODEL,
     go2FoxgloveUrl: e.GO2_FOXGLOVE_URL,
     yodeckApiToken: e.YODECK_API_TOKEN,
-    doorControllerUrl: e.DOOR_CONTROLLER_URL,
   };
 }

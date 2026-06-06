@@ -94,18 +94,33 @@ export function startDoorBridge(args: {
           turnTimer = undefined;
         },
         onToolCall: async (name, params, respond) => {
-          if (name !== "show_destination") return respond("Unknown tool", true);
-          const query = String((params as { query?: unknown }).query ?? "");
-          const dest = await resolveQuery(skills, query, data, { sessionId: "door", transcript: query });
-          if (dest.showOnScreen) broker.broadcastDestination(dest);
-          log.info(`[door] show_destination "${query}" -> ${dest.status} ${dest.destinationId ?? ""}`);
-          respond(
-            dest.status === "resolved"
-              ? `${dest.label}${dest.screen.subtitle ? ", " + dest.screen.subtitle : ""}`
-              : dest.status === "ambiguous"
-                ? "Ask the visitor to be more specific."
-                : "No match — direct them to the front desk.",
-          );
+          // Agent explicitly requests the building door be opened.
+          if (name === "open_door") {
+            if (!door?.inCall) return respond("There's no active door call to open.", true);
+            try {
+              await door.unlock();
+              log.info("[door] 🔓 intercom unlocked (agent open_door)");
+              broker.doorState("unlocked");
+              return respond("The door is open — come on in!");
+            } catch (e) {
+              log.error("[door] unlock failed:", (e as Error).message);
+              return respond("I couldn't open the door just now.", true);
+            }
+          }
+          if (name === "show_destination") {
+            const query = String((params as { query?: unknown }).query ?? "");
+            const dest = await resolveQuery(skills, query, data, { sessionId: "door", transcript: query });
+            if (dest.showOnScreen) broker.broadcastDestination(dest);
+            log.info(`[door] show_destination "${query}" -> ${dest.status} ${dest.destinationId ?? ""}`);
+            return respond(
+              dest.status === "resolved"
+                ? `${dest.label}${dest.screen.subtitle ? ", " + dest.screen.subtitle : ""}`
+                : dest.status === "ambiguous"
+                  ? "Ask the visitor to be more specific."
+                  : "No match — direct them to the front desk.",
+            );
+          }
+          return respond("Unknown tool", true);
         },
         onError: (e) => log.error("[door] agent error:", e.message),
         onClose: () => log.info("[door] agent session closed"),

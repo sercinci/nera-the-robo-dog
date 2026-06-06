@@ -94,6 +94,17 @@ function resolveViaServer(query) {
   });
 }
 
+function unlockViaServer() {
+  return new Promise((resolve) => {
+    const reqId = "u" + ++reqSeq;
+    pending.set(reqId, resolve);
+    ws?.send(JSON.stringify({ type: "unlock", reqId }));
+    setTimeout(() => {
+      if (pending.has(reqId)) { pending.delete(reqId); resolve({ result: "Couldn't reach the door." }); }
+    }, 6000);
+  });
+}
+
 // ---------- screen rendering ----------
 function showIdle() {
   els.card.classList.add("hidden");
@@ -139,6 +150,11 @@ const sessionCommon = () => ({
       els.latency.textContent = "🔎 resolving…";
       const r = await resolveViaServer(query);
       els.latency.textContent = r.status ? `→ ${r.status}` : "";
+      return r.result || "Done.";
+    },
+    open_door: async () => {
+      els.status.textContent = "Opening the door…";
+      const r = await unlockViaServer();
       return r.result || "Done.";
     },
   },

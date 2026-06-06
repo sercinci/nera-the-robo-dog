@@ -21,7 +21,6 @@ import { SttSession } from "./stt/elevenlabs.js";
 import { streamTts } from "./tts/elevenlabs.js";
 import { initialSession, reduce, type Session } from "./session.js";
 import { resolveQuery, renderDirectoryForAgent } from "./agent/tools.js";
-import { authorizeDoor, makeDoorSink } from "./door.js";
 import { skills } from "@nera/skills";
 import { startDoorBridge } from "./intercom/door-bridge.js";
 
@@ -104,12 +103,10 @@ async function main() {
   );
 
   const broker = new Broker(server);
-  const door = makeDoorSink(cfg.doorControllerUrl, log);
-  if (!cfg.doorControllerUrl) log.info("DOOR_CONTROLLER_URL unset — door sink runs in dry-run mode.");
   const lives = new Map<string, Live>();
 
   // Door path: Ring intercom <-> server-side EL agent <-> browser. No-ops without RING_REFRESH_TOKEN.
-  startDoorBridge({ cfg, data, broker, log });
+  const doorIntercom = startDoorBridge({ cfg, data, broker, log });
 
   const set = (id: string, s: Session) => {
     const l = lives.get(id);
@@ -211,13 +208,8 @@ async function main() {
 
     l.history = result.agent.messages;
 
-    // Deterministic door authorization from the confidence score (never the LLM).
-    result.destination.openDoor = authorizeDoor(result.destination);
-
     // Emit to all displays the instant we have a destination (fast path).
     if (result.destination.showOnScreen) broker.broadcastDestination(result.destination);
-    // Fire the door unlock in parallel — never blocks voice or screen.
-    door.open(result.destination);
     log.info(
       `"${transcript}" → ${result.destination.status} ${result.destination.destinationId ?? ""} ` +
         `(tool=${result.agent.toolName ?? "none"})`,
@@ -305,9 +297,7 @@ async function main() {
       broker.resolveResult(id, reqId, { status: "error", result: "I had trouble looking that up." });
       return;
     }
-    dest.openDoor = authorizeDoor(dest);
     if (dest.showOnScreen) broker.broadcastDestination(dest);
-    door.open(dest);
     log.info(`[agent] "${query}" → ${dest.status} ${dest.destinationId ?? ""}`);
 
     const result =
@@ -324,6 +314,24 @@ async function main() {
       label: dest.label,
       result,
     });
+  });
+
+  // open_door tool relayed from the browser agent: physically unlock the Ring intercom.
+  // Only meaningful during an active door call; browser-only sessions have none.
+  broker.on("unlock", async (id: string, reqId: unknown) => {
+    if (!doorIntercom?.inCall) {
+      broker.resolveResult(id, reqId, { status: "no_door", result: "There's no door to open here." });
+      return;
+    }
+    try {
+      await doorIntercom.unlock();
+      log.info("[agent] 🔓 intercom unlocked (open_door)");
+      broker.doorState("unlocked");
+      broker.resolveResult(id, reqId, { status: "ok", result: "The door is open — come on in!" });
+    } catch (e) {
+      log.error("[agent] unlock failed:", (e as Error).message);
+      broker.resolveResult(id, reqId, { status: "error", result: "I couldn't open the door just now." });
+    }
   });
 
   broker.on("disconnect", (id: string) => {
