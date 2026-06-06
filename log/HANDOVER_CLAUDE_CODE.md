@@ -338,3 +338,25 @@ git push -u origin agentic-skills
 - Verifikation: **38/38 Tests grün, 6/6 Files** (vitest run)
 - Door-Contract für Lock-Team in DOOR_OPENING_PROPOSAL.md dokumentiert (HTTP POST {unlock,sessionId,destinationId}); Venue hat echtes E-Schloss, Spine-Team wired DOOR_CONTROLLER_URL
 - Status: ✅ done
+
+### [2026-06-07 Yodeck-Sink] Manueller Screen-Takeover über Yodeck-API
+- `apps/orchestrator/src/sinks/yodeck.ts` — NEU: `YodeckSink` (best-effort, NICHT auf dem Per-Visitor-Hotpath). Base `https://app.yodeck.com/api/v2`, Auth-Header `Authorization: Token <label:value>`. Methoden: `takeoverKey`/`takeoverMedia` (PUT /screens/{id}/takeover, Dauer min 5 Min, null=unbegrenzt), `clear` (beendet Takeover), `listImages`, `listScreens`. Reine Builder (`authHeader`, `takeoverBody`, `CLEAR_BODY`) ausgelagert + unit-getestet.
+- `apps/orchestrator/src/sinks/yodeck-images.ts` — NEU: kuratierte Map `key -> Yodeck media id` (`IMAGE_MEDIA_IDS`). Aktuell LEER — Bilder müssen erst in Yodeck angelegt werden, dann via `list` die ids holen und hier eintragen.
+- `apps/orchestrator/src/dev/yodeck-push.ts` — NEU: manuelles CLI (`list | screens | push <key> [min] | push-id <id> [min] | clear`).
+- `apps/orchestrator/src/config.ts` — `YODECK_SCREEN_ID` / `yodeckScreenId` ergänzt (Token-Slot war schon da).
+- `.env.example` — `YODECK_SCREEN_ID` + Token-Format dokumentiert.
+- Architektur-Konsens: ARCHITECTURE §4.7/§8 sagt "kein Per-Visitor-Push über Yodeck-API" (Latenz; Screen rendert die Live-WS-Seite). Daher bewusst nur manueller/out-of-band Sink, NICHT in den Hotpath/Agent verdrahtet (vom User so entschieden).
+- Verifikation: `tsc --noEmit` CLEAN; **vitest 43/43 grün** (9 neue yodeck-Tests). Live gegen echte API (read-only) geprüft: `screens` → `740139 Screen 1`; `list` → 0 Bilder (Account hat noch keine).
+- ⚠️ OFFEN: (1) Bilder in Yodeck hochladen + `IMAGE_MEDIA_IDS` füllen. (2) "One-time Web-Page-Assignment" (Live-Display-URL als Yodeck-Web-Page-Player) aus §4.7 noch NICHT gebaut — separater Schritt. (3) API-Token aus dem Chat rotieren.
+- Status: ✅ done (Sink + CLI + Tests)
+
+### [2026-06-07 Planimetry] Wayfinding-Bilder pro Location
+- `tools/gen-planimetry.py` — NEU: generiert pro Directory-Eintrag ein 1920×1080 PNG (Pillow). Sauberer 2D-Schemaplan (Korridor + 6 Raum-Slots + Lift/Stair-Spine mit „YOU ARE HERE"), Footprint grob aus der Floor-4-LiDAR-Occupancy-Map abgeleitet. Layout pro Stockwerk IDENTISCH (Team-Entscheid), Räume aus directory.json in Slots; Ziel-Raum mit Pin + Highlight.
+- `assets/planimetry/*.png` — NEU: 25 Bilder = 16 Räume + 5 Events (Pin auf gemappten Raum, EVENT_ROOM) + 4 Floor-Overviews. ~1.4 MB.
+- ⚠️ EHRLICHKEIT: Raumpositionen sind ILLUSTRATIV (Schema, nicht vermessen) — Fußzeile sagt das explizit. Echte Planimetrie gibt es nicht (nur Floor-4-LiDAR-Bitmap, keine Koordinaten/Raumlabels). MCAP-Waypoint-Extraktion abgebrochen: `tools/extract-waypoints.py` nutzt veraltete mcap-ros2-API (McapReader entfernt) + Bag wirft RecordLengthLimitExceeded (evtl. korrupt).
+- Nutzung: PNG ist Yodeck-tauglich → in Yodeck hochladen, media-id holen, in `IMAGE_MEDIA_IDS` (sinks/yodeck-images.ts) eintragen, dann via Takeover anzeigen.
+- Status: ✅ Bilder generiert (regenerierbar via gen-planimetry.py)
+
+### [2026-06-07 Planimetry v2] Orientierung korrigiert (Team-Input)
+- `tools/gen-planimetry.py` — Layout überarbeitet: NORTH=oben. Treppe (STAIRS) Nordseite Mitte, Aufzug (LIFT) Nordseite rechts der Treppe. Haupteingang Südseite NUR Erdgeschoss (Türsymbol + Schwenkbogen + „YOU ARE HERE · MAIN ENTRANCE (S)"). Obergeschosse: Ankunft = Lift/Treppe-Core (N). Kompass (N↑) ergänzt.
+- 25 Bilder neu generiert. Status: ✅ done
