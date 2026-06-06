@@ -8,8 +8,8 @@ const dataDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../../data"
 describe("loadData", () => {
   it("loads and validates the seed directory + people", async () => {
     const data = await loadData(dataDir);
-    expect(data.directory.find((e) => e.id === "robotics-club")).toBeTruthy();
-    expect(data.people.find((p) => p.id === "gabriela-m")).toBeTruthy();
+    expect(data.directory.find((e) => e.id === "room-robotics")).toBeTruthy();
+    expect(data.people.find((p) => p.id === "gabriela-n")).toBeTruthy();
   });
 
   it("throws a clear error when a file is invalid", async () => {
