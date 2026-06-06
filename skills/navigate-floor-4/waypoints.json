@@ -1,0 +1,20 @@
+{
+  "_comment": "Floor 4 waypoints in Nav2 map frame. PRIORITY: map this floor first (Use-Case 1 demo).",
+  "_status": "PLACEHOLDER — run tools/extract-waypoints.py after on-site Floor 4 mapping",
+  "waypoints": {
+    "robotics-club": {
+      "x": null,
+      "y": null,
+      "yaw": null,
+      "label": "Robotics Club",
+      "note": "Primary Use-Case 1 destination. Map this first."
+    },
+    "robotics-meetup-1700": {
+      "x": null,
+      "y": null,
+      "yaw": null,
+      "label": "Robotics Meetup",
+      "note": "Same physical room as robotics-club — use same pose or offset by 0.5m for door approach"
+    }
+  }
+}

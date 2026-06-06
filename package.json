@@ -1,0 +1,13 @@
+{
+  "name": "nera-the-robo-dog",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.5.2",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "dev": "pnpm --filter @nera/orchestrator dev",
+    "start": "pnpm --filter @nera/orchestrator start",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  }
+}

@@ -3,7 +3,7 @@
  * The most common path ("where's the robotics club?", "I'm going to the makerspace").
  */
 import { z } from "zod";
-import type { Skill, MatchResult } from "../contracts/skill.js";
+import type { Skill, MatchResult } from "@nera/contracts";
 
 const Args = z.object({
   query: z.string().describe("The place, room, or event the visitor asked for, as spoken"),

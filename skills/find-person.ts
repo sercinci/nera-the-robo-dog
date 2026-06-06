@@ -3,7 +3,7 @@
  * Pattern to copy for new skills. Returns a MatchResult (id-only).
  */
 import { z } from "zod";
-import type { Skill, MatchResult } from "../contracts/skill.js";
+import type { Skill, MatchResult } from "@nera/contracts";
 
 const Args = z.object({
   name: z.string().describe("The person's name or nickname, exactly as the visitor said it"),
