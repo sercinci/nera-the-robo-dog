@@ -98,6 +98,9 @@ export const MatchVia = z.object({
   person: z.string().optional(), // matched a Person, resolved to their locatedAt
   event: z.string().optional(), // matched an event
   matchedAlias: z.string().optional(), // which alias/term hit
+  // Populated by check_appointment so the orchestrator can detect early arrivals.
+  startsAt: z.string().optional(), // ISO 8601 start time of the matched appointment
+  minutesUntilStart: z.number().optional(),
 });
 export type MatchVia = z.infer<typeof MatchVia>;
 

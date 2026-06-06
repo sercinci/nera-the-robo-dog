@@ -30,3 +30,6 @@ reply.mp3
 .DS_Store
 .vscode/
 .idea/
+
+# Ring refresh token (rotates on use)
+.ring-token

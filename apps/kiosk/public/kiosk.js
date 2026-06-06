@@ -42,7 +42,45 @@ function connectWs() {
       const r = pending.get(m.reqId);
       if (r) { pending.delete(m.reqId); r(m); }
     }
+    else if (m.type === "agent_audio") playPcm(m.b64); // door path: Nera's voice forwarded here
+    else if (m.type === "door_state") onDoorState(m.state);
   };
+}
+
+// ---------- door path: play server-forwarded PCM (Nera's voice from the intercom) ----------
+let pbCtx = null;
+let pbTime = 0;
+function ensurePlayback() {
+  if (!pbCtx) pbCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+  if (pbCtx.state === "suspended") pbCtx.resume();
+}
+function playPcm(b64) {
+  ensurePlayback();
+  const bytes = b64ToBytes(b64);
+  const n = bytes.length >> 1;
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const buf = pbCtx.createBuffer(1, n, 16000);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) ch[i] = dv.getInt16(i * 2, true) / 32768;
+  const src = pbCtx.createBufferSource();
+  src.buffer = buf;
+  src.connect(pbCtx.destination);
+  const now = pbCtx.currentTime;
+  if (pbTime < now) pbTime = now;
+  src.start(pbTime);
+  pbTime += buf.duration;
+}
+function onDoorState(state) {
+  if (state === "ringing") { els.phase.textContent = "DOOR"; els.status.textContent = "🔔 Door buzz — connecting…"; }
+  else if (state === "active" || state === "listening") {
+    els.phase.textContent = "DOOR"; els.face.classList.add("listening"); els.face.classList.remove("talking");
+    els.status.textContent = "Listening at the door…";
+  } else if (state === "speaking") {
+    els.face.classList.add("talking"); els.face.classList.remove("listening");
+    els.status.textContent = "Nera is speaking…";
+  } else if (state === "idle") {
+    showIdle();
+  }
 }
 
 function resolveViaServer(query) {
@@ -161,4 +199,4 @@ els.ring.onclick = () => (conv ? endConversation() : startConversation());
 connectWs();
 showIdle();
 prefetchConfig();
-window.addEventListener("pointerdown", warmMic, { once: true });
+window.addEventListener("pointerdown", () => { warmMic(); ensurePlayback(); }, { once: true });

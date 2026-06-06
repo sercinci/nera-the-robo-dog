@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@nera/contracts": "workspace:*",
+    "@nera/door-intercom": "workspace:*",
     "@nera/skills": "workspace:*",
     "dotenv": "^16.4.5",
     "openai": "^4.67.0",

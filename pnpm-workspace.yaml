@@ -1,9 +1,18 @@
 packages:
   - contracts
   - skills
+  - packages/*
   - apps/*
   - sinks/*
 
 # Allow esbuild (used by tsx/vitest) to run its install script.
 allowBuilds:
   esbuild: true
+  # ffmpeg-for-homebridge downloads the ffmpeg binary used to transcode the
+  # Ring door-intercom audio stream (see apps/orchestrator/src/intercom).
+  ffmpeg-for-homebridge: true
+  # protobufjs (pulled in by werift, Ring's WebRTC stack) builds its protobuf defs.
+  protobufjs: true
+
+minimumReleaseAgeExclude:
+  - undici@7.27.2

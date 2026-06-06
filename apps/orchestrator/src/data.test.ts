@@ -3,7 +3,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { loadData } from "./data.js";
 
-const dataDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../../data");
+// Stable fixture (not the live data/ files) so directory edits never break tests.
+const dataDir = resolve(dirname(fileURLToPath(import.meta.url)), "__fixtures__");
 
 describe("loadData", () => {
   it("loads and validates the seed directory + people", async () => {

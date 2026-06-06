@@ -1,5 +1,5 @@
 {
-  "name": "@nera/skills",
+  "name": "@nera/door-intercom",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,8 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@nera/contracts": "workspace:*",
-    "zod": "^3.23.8"
+    "ring-client-api": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.7.0",

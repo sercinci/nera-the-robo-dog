@@ -23,6 +23,7 @@ import { initialSession, reduce, type Session } from "./session.js";
 import { resolveQuery, renderDirectoryForAgent } from "./agent/tools.js";
 import { authorizeDoor, makeDoorSink } from "./door.js";
 import { skills } from "@nera/skills";
+import { startDoorBridge } from "./intercom/door-bridge.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "../../..");
@@ -106,6 +107,9 @@ async function main() {
   const door = makeDoorSink(cfg.doorControllerUrl, log);
   if (!cfg.doorControllerUrl) log.info("DOOR_CONTROLLER_URL unset — door sink runs in dry-run mode.");
   const lives = new Map<string, Live>();
+
+  // Door path: Ring intercom <-> server-side EL agent <-> browser. No-ops without RING_REFRESH_TOKEN.
+  startDoorBridge({ cfg, data, broker, log });
 
   const set = (id: string, s: Session) => {
     const l = lives.get(id);
