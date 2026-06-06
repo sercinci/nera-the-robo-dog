@@ -103,6 +103,14 @@ export class Broker extends EventEmitter {
   resolveResult(clientId: string, reqId: unknown, payload: Record<string, unknown>): void {
     this.send(clientId, { type: "resolve_result", reqId, ...payload });
   }
+  /** Forward a chunk of Nera's voice (door path) to all browsers for playback. */
+  agentAudio(pcm: Buffer): void {
+    this.broadcastAll({ type: "agent_audio", b64: pcm.toString("base64") });
+  }
+  /** Door call lifecycle for the browser indicator: ringing|active|speaking|listening|idle. */
+  doorState(state: string): void {
+    this.broadcastAll({ type: "door_state", state });
+  }
 
   private broadcastAll(msg: unknown): void {
     const data = JSON.stringify(msg);

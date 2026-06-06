@@ -1,0 +1,36 @@
+{
+  "name": "ring-client-api",
+  "version": "14.3.0-nera-fork.1",
+  "description": "Vendored fork of ring-client-api with Ring Intercom audio support — see VENDORED.md",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./ffmpeg": "./lib/ffmpeg.js",
+    "./util": "./lib/util.js",
+    "./rest-client": "./lib/rest-client.js",
+    "./streaming/streaming-session": "./lib/streaming/streaming-session.js"
+  },
+  "bin": {
+    "ring-auth-cli": "lib/ring-auth-cli.js",
+    "ring-device-data-cli": "lib/ring-device-data-cli.js"
+  },
+  "files": ["lib"],
+  "dependencies": {
+    "@eneris/push-receiver": "4.3.1",
+    "@homebridge/camera-utils": "^3.0.0",
+    "colors": "1.4.0",
+    "debug": "^4.4.3",
+    "json-bigint": "^1.0.0",
+    "rxjs": "^7.8.2",
+    "systeminformation": "^5.31.7",
+    "undici": "^7.27.2",
+    "uuid": "^14.0.0",
+    "werift": "0.23.0"
+  },
+  "engines": {
+    "node": "^20 || ^22 || ^24"
+  },
+  "license": "MIT"
+}
