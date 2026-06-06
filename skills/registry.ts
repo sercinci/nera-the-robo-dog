@@ -8,8 +8,7 @@
 import type { AnySkill } from "@nera/contracts";
 import { findPerson } from "./find-person.js";
 import { findPlace } from "./find-place.js";
+import { checkAppointment } from "./check-appointment.js";
+import { navigateFloor } from "./navigate-floor.js";
 
-export const skills: AnySkill[] = [
-  findPlace, // most common: direct room/zone/event match
-  findPerson, // person -> their location
-];
+export const skills = [findPerson, findPlace, checkAppointment, navigateFloor];

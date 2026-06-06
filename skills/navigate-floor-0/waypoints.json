@@ -1,0 +1,14 @@
+{
+  "_comment": "Floor 0 waypoints in Nav2 map frame. Units: meters (x,y), degrees (yaw).",
+  "_source": "Extract from: tools/extract-waypoints.py --bag 'LiDAR data/debug_big_walkaround_20260514_184542_0.mcap' --floor 0",
+  "_status": "PLACEHOLDER — replace with real coordinates from bag extraction",
+  "waypoints": {
+    "lobby": {
+      "x": 0.0,
+      "y": 0.0,
+      "yaw": 0.0,
+      "label": "Lobby / Reception",
+      "note": "PLACEHOLDER — set to bag origin. Extract real pose from MCAP."
+    }
+  }
+}

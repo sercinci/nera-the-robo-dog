@@ -1,0 +1,8 @@
+{
+  "_comment": "Floor 3 waypoints in Nav2 map frame.",
+  "_status": "PLACEHOLDER — floor 3 not yet in bag.",
+  "waypoints": {
+    "boardroom": { "x": null, "y": null, "yaw": null, "label": "Boardroom" },
+    "pitch-day-1400": { "x": null, "y": null, "yaw": null, "label": "Startup Pitch Day" }
+  }
+}

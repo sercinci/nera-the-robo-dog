@@ -1,65 +1,81 @@
 [
   {
-    "id": "ministry-of-magic",
-    "label": "Ministry of Magic (Front Desk)",
-    "aliases": ["reception", "front desk", "not reception", "the desk", "help"],
+    "id": "lobby",
+    "label": "Lobby",
+    "aliases": ["entrance", "reception", "front desk"],
     "kind": "zone",
     "floor": 0,
-    "zone": "entrance",
+    "zone": "lobby",
     "pose": null,
-    "screen": {
-      "title": "Ministry of Magic",
-      "subtitle": "Ground floor · Entrance",
-      "routeAssetId": "route-entrance",
-      "mapMarker": "M0"
-    }
+    "screen": { "template": "wayfinding", "params": {} }
   },
   {
     "id": "robotics-club",
     "label": "Robotics Club",
-    "aliases": ["robotics", "robot club", "makerspace robots", "robotics meetup"],
+    "aliases": ["robotics", "robot lab", "maker space"],
     "kind": "room",
     "floor": 4,
     "zone": "east-wing",
     "pose": null,
-    "screen": {
-      "title": "Robotics Club",
-      "subtitle": "4th floor · East Wing",
-      "routeAssetId": "route-4-east",
-      "mapMarker": "R4"
-    }
+    "screen": { "template": "wayfinding", "params": {} }
   },
   {
-    "id": "makerspace",
-    "label": "Makerspace",
-    "aliases": ["maker space", "workshop", "hackerspace", "lab"],
+    "id": "boardroom",
+    "label": "Boardroom",
+    "aliases": ["board room", "conference room", "meeting room"],
     "kind": "room",
-    "floor": 4,
+    "floor": 3,
     "zone": "west-wing",
     "pose": null,
-    "screen": {
-      "title": "Makerspace",
-      "subtitle": "4th floor · West Wing",
-      "routeAssetId": "route-4-west",
-      "mapMarker": "W4"
-    }
+    "screen": { "template": "wayfinding", "params": {} }
+  },
+  {
+    "id": "coworking-a",
+    "label": "Coworking Space A",
+    "aliases": ["coworking", "open space", "hot desks"],
+    "kind": "zone",
+    "floor": 2,
+    "zone": "south-wing",
+    "pose": null,
+    "screen": { "template": "wayfinding", "params": {} }
   },
   {
     "id": "robotics-meetup-1700",
     "label": "Robotics Meetup",
-    "aliases": ["the meetup", "robotics event", "robot talk"],
+    "aliases": ["robotics meetup", "meetup", "robotics event"],
     "kind": "event",
     "floor": 4,
     "zone": "east-wing",
-    "startsAt": "2026-06-07T17:00:00Z",
-    "endsAt": "2026-06-07T19:00:00Z",
+    "startsAt": "2026-06-07T17:00:00+02:00",
+    "endsAt": "2026-06-07T19:00:00+02:00",
     "host": "gabriela-m",
     "pose": null,
-    "screen": {
-      "title": "Robotics Meetup · 17:00",
-      "subtitle": "4th floor · East Wing (Robotics Club)",
-      "routeAssetId": "route-4-east",
-      "mapMarker": "R4"
-    }
+    "screen": { "template": "event", "params": {} }
+  },
+  {
+    "id": "interview-1030",
+    "label": "HR Interview",
+    "aliases": ["interview", "job interview", "hr meeting"],
+    "kind": "event",
+    "floor": 2,
+    "zone": "south-wing",
+    "startsAt": "2026-06-07T10:30:00+02:00",
+    "endsAt": "2026-06-07T11:30:00+02:00",
+    "host": "alexander-s",
+    "pose": null,
+    "screen": { "template": "event", "params": {} }
+  },
+  {
+    "id": "pitch-day-1400",
+    "label": "Startup Pitch Day",
+    "aliases": ["pitch day", "pitch", "demo day"],
+    "kind": "event",
+    "floor": 3,
+    "zone": "west-wing",
+    "startsAt": "2026-06-07T14:00:00+02:00",
+    "endsAt": "2026-06-07T16:00:00+02:00",
+    "host": "lisa-w",
+    "pose": null,
+    "screen": { "template": "event", "params": {} }
   }
 ]
