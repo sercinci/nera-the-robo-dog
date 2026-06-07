@@ -12,11 +12,14 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { PassThrough } from "node:stream";
 import { doorIntercomFromEnv, type DoorIntercom } from "@nera/door-intercom";
 import { skills } from "@nera/skills";
+import { pcmToWav, wavHeader, WAV_STREAM_DATA_SIZE, amplifyPcm } from "../audio/wav.js";
 import { ConvaiSession } from "../agent/convai-ws.js";
-import { pcmToWav } from "../audio/wav.js";
 import { resolveQuery, renderDirectoryForAgent } from "../agent/tools.js";
+
+const DEBUG_WAV = "/tmp/nera-door-last.wav"; // last greeting, for verification
 
 // Ring rotates its refresh token on every use. We persist the freshest one to a
 // gitignored file and prefer it over .env, so the door survives restarts.
@@ -28,6 +31,7 @@ import type { Logger } from "../log.js";
 
 const SAMPLE_RATE = 16000;
 const TURN_GAP_MS = 700; // silence after the last agent chunk => end of a spoken turn
+const DOOR_GAIN = 3; // amplify Nera for the quiet intercom speaker (matches the working mp3 volume=3.0)
 
 export function startDoorBridge(args: {
   cfg: Config;
@@ -49,23 +53,26 @@ export function startDoorBridge(args: {
   let turnTimer: ReturnType<typeof setTimeout> | undefined;
   let speaking = false; // Nera is talking -> mute the door mic to avoid feedback
   let door: DoorIntercom | null = null;
+  let callStartMs = 0;
+  let speakStream: PassThrough | null = null; // live WAV stream feeding door.speak()
 
-  function finalizeTurn() {
+  // End-of-turn: stop streaming to the door and dump the turn's audio for verification.
+  function endTurn() {
     turnTimer = undefined;
-    if (!turnChunks.length || !door?.inCall) {
-      turnChunks = [];
-      speaking = false;
-      return;
+    if (turnChunks.length) {
+      try {
+        const wav = pcmToWav(Buffer.concat(turnChunks), SAMPLE_RATE);
+        writeFileSync(DEBUG_WAV, wav);
+        log.info(`[door] dumped greeting → ${DEBUG_WAV} (${wav.length}B)`);
+      } catch (e) {
+        log.warn(`[door] dump failed: ${(e as Error).message}`);
+      }
     }
-    const wav = pcmToWav(Buffer.concat(turnChunks), SAMPLE_RATE);
     turnChunks = [];
-    door
-      .speak(wav)
-      .catch((e) => log.error("[door] speak:", (e as Error).message))
-      .finally(() => {
-        speaking = false; // reopen the mic to the agent
-        broker.doorState("listening");
-      });
+    if (speakStream) {
+      speakStream.end(); // closes the stream → door.speak() resolves
+      speakStream = null;
+    }
   }
 
   function startConversation() {
@@ -82,16 +89,36 @@ export function startDoorBridge(args: {
         },
         onUserTranscript: (t) => log.info(`[door] visitor: "${t}"`),
         onAgentAudio: (pcm) => {
-          speaking = true; // mute door mic while Nera's audio is arriving
-          broker.agentAudio(pcm); // always forward to the browser (low-latency stream)
-          turnChunks.push(pcm); // accumulate for a single door utterance
+          broker.agentAudio(pcm); // browser at normal level
+          const boosted = amplifyPcm(pcm, DOOR_GAIN); // intercom speaker is quiet
+          turnChunks.push(boosted); // dump reflects what the door actually receives
+          // Start a live WAV stream to the door on the first chunk of a turn.
+          if (!speakStream && door?.inCall) {
+            log.info("[door] 🔊 streaming Nera to the door…");
+            speaking = true; // mute door mic while Nera talks
+            speakStream = new PassThrough();
+            speakStream.write(wavHeader(SAMPLE_RATE, WAV_STREAM_DATA_SIZE)); // streaming header
+            door
+              .speak(speakStream)
+              .then(() => log.info("[door] ✓ finished speaking to the door"))
+              .catch((e) => log.error("[door] speak:", (e as Error).message))
+              .finally(() => {
+                speaking = false;
+                broker.doorState("listening");
+              });
+          }
+          speakStream?.write(boosted); // real-time audio to the door (amplified)
           if (turnTimer) clearTimeout(turnTimer);
-          turnTimer = setTimeout(finalizeTurn, TURN_GAP_MS);
+          turnTimer = setTimeout(endTurn, TURN_GAP_MS);
         },
         onInterruption: () => {
           turnChunks = [];
           if (turnTimer) clearTimeout(turnTimer);
           turnTimer = undefined;
+          if (speakStream) {
+            speakStream.end();
+            speakStream = null;
+          }
         },
         onToolCall: async (name, params, respond) => {
           // Agent explicitly requests the building door be opened.
@@ -135,6 +162,7 @@ export function startDoorBridge(args: {
       broker.doorState("ringing");
     },
     onCallStart: () => {
+      callStartMs = Date.now();
       log.info("[door] call live");
       broker.doorState("active");
       startConversation();
@@ -142,11 +170,19 @@ export function startDoorBridge(args: {
     onAudioChunk: (pcm) => {
       if (!speaking) convai?.sendAudio(pcm); // half-duplex
     },
-    onCallEnd: () => {
-      log.info("[door] call ended");
+    onCallEnd: (info) => {
+      const dur = callStartMs ? Date.now() - callStartMs : 0;
+      log.info(`[door] call ended after ${dur}ms (inbound audio packets: ${info?.inboundPackets ?? "?"})`);
       convai?.close();
       convai = null;
       if (turnTimer) clearTimeout(turnTimer);
+      turnTimer = undefined;
+      if (speakStream) {
+        speakStream.end();
+        speakStream = null;
+      }
+      speaking = false;
+      turnChunks = [];
       broker.doorState("idle");
       broker.broadcastIdle();
     },

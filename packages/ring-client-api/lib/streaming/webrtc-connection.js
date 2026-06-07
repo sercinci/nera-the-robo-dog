@@ -65,6 +65,7 @@ export class WebrtcConnection extends Subscribed {
         }), onClose.subscribe(() => {
             this.callEnded();
         }), this.pc.onConnectionState.subscribe((state) => {
+            console.log("[webrtc] connection state:", state);
             if (state === 'failed') {
                 logError('Stream connection failed');
                 this.callEnded();
