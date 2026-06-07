@@ -32,6 +32,7 @@ import type { Logger } from "../log.js";
 const SAMPLE_RATE = 16000;
 const TURN_GAP_MS = 700; // silence after the last agent chunk => end of a spoken turn
 const DOOR_GAIN = 3; // amplify Nera for the quiet intercom speaker (matches the working mp3 volume=3.0)
+const DOOR_DEBUG = process.env.DOOR_DEBUG === "1"; // verbose mic mute/capture diagnostics
 
 export function startDoorBridge(args: {
   cfg: Config;
@@ -51,10 +52,12 @@ export function startDoorBridge(args: {
   let convai: ConvaiSession | null = null;
   let turnChunks: Buffer[] = [];
   let turnTimer: ReturnType<typeof setTimeout> | undefined;
-  let speaking = false; // Nera is talking -> mute the door mic to avoid feedback
+  let speakingCount = 0; // # of in-flight door.speak() calls — mute the door mic while > 0
   let door: DoorIntercom | null = null;
   let callStartMs = 0;
   let speakStream: PassThrough | null = null; // live WAV stream feeding door.speak()
+  let micSent = 0; // diagnostic: visitor chunks forwarded to the agent (DOOR_DEBUG)
+  let micDropped = 0; // diagnostic: visitor chunks dropped because Nera was speaking
 
   // End-of-turn: stop streaming to the door and dump the turn's audio for verification.
   function endTurn() {
@@ -78,7 +81,7 @@ export function startDoorBridge(args: {
   function startConversation() {
     convai?.close();
     turnChunks = [];
-    speaking = false;
+    speakingCount = 0;
     convai = new ConvaiSession(
       { agentId: cfg.elevenLabsAgentId!, apiKey: cfg.elevenLabsApiKey, dynamicVariables: { directory } },
       {
@@ -95,16 +98,25 @@ export function startDoorBridge(args: {
           // Start a live WAV stream to the door on the first chunk of a turn.
           if (!speakStream && door?.inCall) {
             log.info("[door] 🔊 streaming Nera to the door…");
-            speaking = true; // mute door mic while Nera talks
             speakStream = new PassThrough();
             speakStream.write(wavHeader(SAMPLE_RATE, WAV_STREAM_DATA_SIZE)); // streaming header
+            speakingCount++; // keep the door mic muted until every queued utterance finishes
+            if (DOOR_DEBUG && speakingCount === 1) {
+              log.info(`[door][dbg] 🎤 MUTE — captured ${micSent} chunks during last listen window`);
+              micSent = 0;
+            }
             door
               .speak(speakStream)
               .then(() => log.info("[door] ✓ finished speaking to the door"))
               .catch((e) => log.error("[door] speak:", (e as Error).message))
               .finally(() => {
-                speaking = false;
-                broker.doorState("listening");
+                if (--speakingCount === 0) {
+                  broker.doorState("listening");
+                  if (DOOR_DEBUG) {
+                    log.info(`[door][dbg] 🎤 OPEN — dropped ${micDropped} chunks while Nera spoke`);
+                    micDropped = 0;
+                  }
+                }
               });
           }
           speakStream?.write(boosted); // real-time audio to the door (amplified)
@@ -168,7 +180,13 @@ export function startDoorBridge(args: {
       startConversation();
     },
     onAudioChunk: (pcm) => {
-      if (!speaking) convai?.sendAudio(pcm); // half-duplex
+      // half-duplex: only feed the agent while Nera isn't speaking
+      if (speakingCount === 0) {
+        micSent++;
+        convai?.sendAudio(pcm);
+      } else {
+        micDropped++;
+      }
     },
     onCallEnd: (info) => {
       const dur = callStartMs ? Date.now() - callStartMs : 0;
@@ -181,7 +199,7 @@ export function startDoorBridge(args: {
         speakStream.end();
         speakStream = null;
       }
-      speaking = false;
+      speakingCount = 0;
       turnChunks = [];
       broker.doorState("idle");
       broker.broadcastIdle();

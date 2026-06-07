@@ -64,6 +64,7 @@ export class DoorIntercom {
   private call: LiveCall | null = null;
   private inboundPackets = 0;
   private speaking = false;
+  private speakQueue: Promise<void> = Promise.resolve(); // serialize back-to-back utterances
   private opening = false;
   private callTimer: ReturnType<typeof setTimeout> | undefined;
   private stopped = false;
@@ -115,16 +116,49 @@ export class DoorIntercom {
     return this.call !== null;
   }
 
+  /**
+   * Open the intercom's speaker (return-audio) channel.
+   *
+   * The patched ring-client-api only exposes the camera-style
+   * `activateCameraSpeaker()`, which gates its `camera_options {stealth_mode:false}`
+   * on a `camera_connected` notification. A cameraless audio intercom never emits
+   * that event, so the gate never opens and the speaker stays muted — every
+   * `speak()` is encoded and sent, but silently dropped at the device.
+   *
+   * We send the same speaker-open message UNGATED. Verified live: a tone played
+   * before this runs is inaudible at the panel; the same tone after it is audible.
+   * Ring RE-MUTES the speaker after each utterance, so we re-assert it on call
+   * open AND before every speak() — otherwise only the first turn is audible.
+   * `sendSessionMessage` internally waits for the session id, so this is safe to
+   * call as soon as the call object exists.
+   *
+   * Reaches private internals of the vendored fork because its public API has no
+   * ungated speaker control for the audio-only intercom.
+   */
+  private activateSpeaker(): void {
+    if (!this.call) return;
+    const conn = (
+      this.call as unknown as {
+        connection?: { sendSessionMessage?: (method: string, body?: Record<string, unknown>) => void };
+      }
+    ).connection;
+    conn?.sendSessionMessage?.("camera_options", { stealth_mode: false });
+  }
+
   /** Open the live audio call for the current ding and start streaming inbound audio. */
   private async openCall(): Promise<void> {
     if (this.stopped || this.call || this.opening || !this.intercom) return;
     this.opening = true;
     this.inboundPackets = 0;
+    this.speakQueue = Promise.resolve();
 
     try {
       const call = await this.intercom.startLiveCall();
       this.call = call;
       this.opening = false;
+      // Audio intercoms keep the speaker muted until told otherwise — open it now
+      // so Nera is audible from the first turn (see activateSpeaker docs).
+      this.activateSpeaker();
 
       call.onAudioRtp.subscribe(() => {
         this.inboundPackets++;
@@ -185,17 +219,24 @@ export class DoorIntercom {
    * can call it repeatedly across conversation turns.
    *
    * `audio` must be a format ffmpeg can sniff (mp3/wav/ogg) — e.g. an
-   * ElevenLabs mp3 TTS stream. One utterance at a time: throws if already
-   * speaking or if there's no live call.
+   * ElevenLabs mp3 TTS stream. Calls are QUEUED and played back-to-back in order
+   * (a single speaker can only play one thing at a time), so a follow-up
+   * utterance — e.g. the line the agent says right after a tool call — is no
+   * longer dropped. Throws only if there's no live call.
    */
-  async speak(audio: NodeJS.ReadableStream | Buffer): Promise<void> {
+  speak(audio: NodeJS.ReadableStream | Buffer): Promise<void> {
     if (!this.call) {
       throw new Error("No active call — speak() only works during a live ding.");
     }
-    if (this.speaking) {
-      throw new Error("Already speaking — await the previous speak() before the next.");
-    }
+    const run = this.speakQueue.then(() => this.doSpeak(audio));
+    this.speakQueue = run.catch(() => {}); // a failed utterance must not wedge the queue
+    return run;
+  }
+
+  private async doSpeak(audio: NodeJS.ReadableStream | Buffer): Promise<void> {
+    if (!this.call) return; // the call ended while this utterance was queued
     this.speaking = true;
+    this.activateSpeaker(); // Ring re-mutes the speaker after each utterance — re-open it
     const inputStream = Buffer.isBuffer(audio) ? Readable.from(audio) : audio;
     const call = this.call;
     try {
