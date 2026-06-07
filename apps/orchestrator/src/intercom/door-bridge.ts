@@ -82,8 +82,8 @@ export function startDoorBridge(args: {
   let pendingEndCall = false; // end the call once Nera finishes the utterance in flight
   let shownThisCall = false; // a destination was shown on screen during this call
   let displayHoldTimer: ReturnType<typeof setTimeout> | undefined; // delays broadcastIdle() after call end
-  let silenceTimer: ReturnType<typeof setTimeout> | undefined; // absolute visitor-silence clock
-  let silenceTimerArmed = false; // starts once, on the first mic-open; from then on only real visitor speech resets it
+  let silenceTimer: ReturnType<typeof setTimeout> | undefined; // open-mic visitor-silence clock
+  let silenceEndPending = false; // a silence-triggered goodbye is queued (a late real reply still cancels it)
   let checkedInOnce = false; // "are you still there?" asked once already (the spec's hard cap)
 
   function clearSilenceTimer() {
@@ -91,12 +91,14 @@ export function startDoorBridge(args: {
     silenceTimer = undefined;
   }
 
-  // Absolute clock on visitor silence — measures time since the visitor's last
-  // REAL utterance (not since the mic last opened/closed). This is deliberate:
-  // Nera's own turns (including her native "are you still there?" looping) must
-  // NOT reset it, otherwise her chatter masks true visitor inactivity forever.
-  // Tolerates normal thinking pauses; after INACTIVITY_PROMPT_MS of true visitor
-  // silence, checks in once, then says goodbye and ends the call if still no reply.
+  // Open-mic silence clock — counts INACTIVITY_PROMPT_MS of silence while the door
+  // mic is actually open (i.e. while the visitor could be heard). It is re-armed
+  // every time the mic re-opens after Nera speaks (see the speak() finally), because
+  // the door is half-duplex: Nera's turns mute the mic and the visitor literally
+  // can't answer then. Counting that muted time against them is what cut real replies
+  // off mid-sentence. This can't loop forever: Nera never speaks unprompted, and the
+  // check-in is hard-capped to once (checkedInOnce) — after a further window of
+  // open-mic silence with still no real reply she says goodbye and the call ends.
   function armSilenceTimer() {
     clearSilenceTimer();
     silenceTimer = setTimeout(() => {
@@ -119,6 +121,7 @@ export function startDoorBridge(args: {
       } else {
         log.info("[door] visitor silent after check-in — saying goodbye and ending the call");
         pendingEndCall = true;
+        silenceEndPending = true; // a genuine reply landing a beat later still cancels this
         convai?.sendUserMessage(SILENCE_GOODBYE_CUE);
       }
     }, INACTIVITY_PROMPT_MS);
@@ -148,8 +151,8 @@ export function startDoorBridge(args: {
     turnChunks = [];
     speakingCount = 0;
     pendingEndCall = false;
+    silenceEndPending = false;
     checkedInOnce = false;
-    silenceTimerArmed = false;
     clearSilenceTimer();
     shownThisCall = false;
     if (displayHoldTimer) {
@@ -170,6 +173,16 @@ export function startDoorBridge(args: {
           // per spec only natural language counts as a reply; filler must NOT
           // reset the clock (that's exactly what let the visitor drift past unnoticed).
           if (REAL_SPEECH_RE.test(t)) {
+            // The silence watchdog runs on a timer; STT runs a little behind the
+            // speech. So the visitor can answer right as the timer fires and have
+            // their transcript arrive just after the goodbye was queued. They are
+            // clearly still here — abort the hang-up. (Only the silence-triggered
+            // end is cancellable; an open_door end stays terminal.)
+            if (silenceEndPending) {
+              silenceEndPending = false;
+              pendingEndCall = false;
+              log.info("[door] visitor re-engaged — cancelling pending goodbye");
+            }
             checkedInOnce = false; // genuine engagement — fresh allowance for a future silence episode
             armSilenceTimer();
           }
@@ -196,18 +209,16 @@ export function startDoorBridge(args: {
                 if (--speakingCount === 0) {
                   if (pendingEndCall) {
                     pendingEndCall = false;
+                    silenceEndPending = false;
                     log.info("[door] ending call after Nera's closing line");
                     door?.endCall();
                   } else {
                     broker.doorState("listening");
-                    // Start the absolute silence clock once, the first time the
-                    // mic opens (i.e. once the visitor is expected to respond).
-                    // From here on ONLY onUserTranscript (real speech) resets it —
-                    // Nera's own turns must not, see armSilenceTimer's doc comment.
-                    if (!silenceTimerArmed) {
-                      silenceTimerArmed = true;
-                      armSilenceTimer();
-                    }
+                    // Mic just re-opened (Nera finished). Re-arm the silence clock so
+                    // it measures OPEN-MIC silence — the visitor's response window
+                    // starts now, not while Nera was speaking over a muted mic. The
+                    // check-in is hard-capped by checkedInOnce, so this never loops.
+                    armSilenceTimer();
                     if (DOOR_DEBUG) {
                       log.info(`[door][dbg] 🎤 OPEN — dropped ${micDropped} chunks while Nera spoke`);
                       micDropped = 0;
@@ -221,6 +232,14 @@ export function startDoorBridge(args: {
           turnTimer = setTimeout(endTurn, TURN_GAP_MS);
         },
         onInterruption: () => {
+          // ElevenLabs decided the visitor barged in and aborted Nera's turn. On the
+          // half-duplex door this is the prime suspect for "audio dies mid-sentence
+          // while the log keeps scrolling": if it fires while we're streaming, the
+          // door speaker goes silent here. Log it so a live test can confirm whether
+          // (and exactly when) interruptions are cutting Nera off.
+          if (speakStream) {
+            log.info(`[door] ⚠ interruption — Nera's turn cut off mid-stream (speakingCount=${speakingCount})`);
+          }
           turnChunks = [];
           if (turnTimer) clearTimeout(turnTimer);
           turnTimer = undefined;
@@ -304,6 +323,7 @@ export function startDoorBridge(args: {
       turnTimer = undefined;
       clearSilenceTimer();
       pendingEndCall = false;
+      silenceEndPending = false;
       if (speakStream) {
         speakStream.end();
         speakStream = null;

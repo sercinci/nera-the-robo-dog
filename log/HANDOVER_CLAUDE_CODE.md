@@ -853,3 +853,170 @@ prüfen. Das gilt auch für etwaige künftige Erweiterungen.
   Inaktivität jetzt die korrekte Abschiedszeile *„Thanks for stopping by — see
   you next time!"*? Beides bitte explizit gegenhören, nicht nur das Terminal-Log
   prüfen — genau DAS war ja das Problem (Log sah gut aus, Audio war tot).
+
+### [2026-06-07 ~16:30] Nera legt auf, OBWOHL der Besucher antwortet (Live-Test #3)
+
+Gerald hat zwei weitere Mitschnitte geschickt. Diesmal: die absolute Stille-Uhr
+aus den vorigen Fixes **schießt zu früh** und beendet den Call, während der
+Besucher gerade redet.
+
+**Symptom (in beiden Logs identisch):**
+```
+[door] visitor silent after check-in — saying goodbye and ending the call   ← pendingEndCall=true
+[door] visitor: "Yes, I'm here. Uh, is Alexander in the house today?"        ← Antwort kommt EINEN Tick zu spät
+...
+[door] ending call after Nera's closing line                                ← legt trotzdem auf
+```
+Im zweiten Log noch offensichtlicher: Besucher sagt *„Just a moment."*, Nera
+antwortet korrekt *„No problem, I'll be right here."* — und der Call endet
+trotzdem. Nera sagt also wörtlich, sie wartet, und legt dann auf.
+
+**Root Cause — zwei sich verstärkende Fehler:**
+1. **Der Goodbye-Latch ist nicht widerrufbar.** Sobald der Timer
+   `pendingEndCall=true` setzt, räumt das nur noch das Auflegen selbst weg. Das
+   echte Besucher-Transkript, das einen Wimpernschlag später eintrifft (STT
+   läuft der Sprache immer etwas hinterher), kommt zu spät — der Latch steht
+   schon.
+2. **Die Stille-Uhr zählte die stummgeschaltete Mikro-Zeit mit.** Die „absolute"
+   Uhr maß Wandzeit seit der letzten echten Äußerung. Die Tür ist aber
+   Half-Duplex: während Nera *„are you still there?"* spricht, ist das Mikro stumm
+   (`speakingCount>0`). Diese Zeit wurde dem Besucher angerechnet → das echte
+   Antwortfenster schrumpfte auf ~6s (10s − Neras Sprechzeit − STT-Latenz),
+   deshalb landet die Antwort zuverlässig knapp NACH dem Timer.
+
+**Fix ([door-bridge.ts](apps/orchestrator/src/intercom/door-bridge.ts)) — zwei Änderungen:**
+1. **Open-Mic-Uhr statt Wandzeit-Uhr:** `armSilenceTimer()` wird jetzt bei JEDEM
+   Mikro-Öffnen neu bewaffnet (im `speak()`-`finally`, Listening-Zweig). Sie misst
+   damit nur noch Stille bei OFFENEM Mikro — das Antwortfenster startet, wenn Nera
+   fertig ist, nicht währenddessen. Loopt nicht: Nera spricht nie unaufgefordert,
+   und der Check-in ist per `checkedInOnce` hart auf 1× gekappt. (Das alte
+   `silenceTimerArmed`-„genau-einmal"-Flag ist damit weg.)
+2. **Goodbye ist widerrufbar:** neues Flag `silenceEndPending` wird im
+   Goodbye-Zweig gesetzt. Trifft danach noch ein echtes Transkript ein
+   (`onUserTranscript`, `REAL_SPEECH_RE`), wird `pendingEndCall` + `silenceEndPending`
+   gelöscht → Log `„visitor re-engaged — cancelling pending goodbye"`. Nur der
+   Stille-bedingte Abschied ist widerrufbar; ein `open_door`-Ende bleibt terminal.
+
+**Ergebnis:** Der Besucher bekommt nach dem Check-in ein volles, faires
+Antwortfenster (Mikro offen), und selbst bei der seltenen STT-Latenz-Kollision
+wird das Auflegen durch die eintreffende echte Antwort noch abgefangen.
+
+- Typecheck clean (`tsc --noEmit` exit 0), alle 48 Tests grün (`vitest run`).
+- Status: ✅ Fix implementiert (Code-Review + Typecheck + Tests) · 🔲 Gerald:
+  **Live-Test** — gezielt: nach dem *„are you still there?"* ein paar Sekunden
+  warten und DANN antworten — bleibt der Call jetzt am Leben? Und der echte
+  Stille-Fall (gar nicht antworten) muss weiterhin sauber mit der Abschiedszeile
+  enden. Tuning-Hinweis: `INACTIVITY_PROMPT_MS` (10s) ist jetzt echte
+  Open-Mic-Stille — falls für die Demo zu knapp, gefahrlos hochsetzbar.
+
+### [2026-06-07 ~17:30] ROOT CAUSE gefunden: Prompt befiehlt Phantom-Tools (instructions.md)
+
+Gerald hat zu Recht gepusht: die Silence-Watchdog-Fixes kurierten nur ein
+**Symptom**, nicht die Ursache. Die liegt in `skills/instructions.md` — nicht im
+Door-Bridge.
+
+**Befund:** Der ElevenLabs-Agent (Tür + Kiosk, gleiche `agentId`) hat genau DREI
+Client-Tools — belegt durch zwei unabhängige, übereinstimmende Stellen:
+- Kiosk: [kiosk.js:175-193](apps/kiosk/public/kiosk.js) → `show_destination`, `open_door`, `human_fallback`.
+- Door: [door-bridge.ts:259-269](apps/orchestrator/src/intercom/door-bridge.ts) → dieselben drei; alles andere → `"Unknown tool"`.
+
+Aber `instructions.md` (der System-Prompt) befahl FÜNF Tools, die es nicht gibt:
+`find_person`, `check_appointment` (3× als „wichtig"/„never skip" betont),
+`navigate_floor`, `find_place`, `notify_host`. Und das einzige echte Routing-Tool
+`show_destination` kam im Prompt **gar nicht vor**. Der ElevenLabs-SDK lehnt
+unbekannte Tool-Calls mit `is_error: true` ab ([elevenlabs-client.js:28431](apps/kiosk/public/vendor/elevenlabs-client.js)).
+
+**Kausalkette zum Symptom:** Besucher fragt „is Alexander in today?" → Prompt sagt
+`check_appointment` aufrufen → Tool existiert nicht → Agent flailt → leere `"..."`-
+Antwort (genau im Log 1) → Besucher verstummt verwirrt → Silence-Watchdog feuert →
+Check-in → Goodbye → Call endet. Mein Door-Bridge-Fix härtete nur den Watchdog,
+der bloß auf einen schon toten Agenten reagierte.
+
+Zusätzlich strukturell unmöglich: Die als **aktiv** markierte Use-Case 1
+(„Known + Appointment") ist nicht erreichbar — `show_destination`s Server-Code
+([tools.ts:72-90](apps/orchestrator/src/agent/tools.ts)) ruft nur `find_place` →
+`find_person`, **nie** `check_appointment`. Dazu: in `data/people.json` ist bei
+allen `event: null`, und `data/directory.json`-Events haben keine `startsAt/endsAt`
+— es gibt also weder Tool noch Daten für Termine.
+
+**Fix A umgesetzt — `instructions.md` an die Drei-Tool-Realität angeglichen:**
+- Phantom-Tools (`find_person`, `check_appointment`, `navigate_floor`, `find_place`,
+  `notify_host`) komplett entfernt. `show_destination` als Haupt-Tool für JEDE
+  Routing-Anfrage (Person, Raum, Zone, Event) dokumentiert; `open_door` +
+  `human_fallback` bleiben.
+- „Is X here today?" → über `show_destination` beantworten (resolved = ist im Haus,
+  via `locatedAt`); kein Termin-/Zeit-Versprechen mehr.
+- Phantom-Daten raus: „include start time" und die Termin-gebundene Hospitality-
+  Sektion (Kaffee/Wasser beim Warten) entfernt — beides hing an nicht vorhandenen
+  Event-Zeiten. „east wing" → reale Areas (Makerspace etc.).
+- Geralds Wortlaut in Personality/Environment/Tone/Out-of-scope soweit möglich
+  erhalten (faithful editing) — nur Tool-/Daten-bezogene Stellen geändert.
+
+**⚠️ Wichtig für Gerald:** Der eigentliche Tool-Satz lebt im **ElevenLabs-Dashboard**,
+nicht im Repo. Ich habe ihn aus den zwei Client-Handlern INFERIERT (beide stimmen
+überein). Bitte im Dashboard gegenprüfen: Der Agent-Prompt dort muss mit dieser
+neuen `instructions.md` übereinstimmen, und die registrierten Tools dürfen NUR
+`show_destination`, `open_door`, `human_fallback` sein. Falls dort noch
+`find_person`/`check_appointment` etc. als Tools hängen → entfernen.
+
+**B (post-demo):** „richtig" wäre, die granularen Tools im Dashboard + Handlern zu
+ergänzen und `check_appointment` wirklich in den Flow zu hängen (Use-Case 1). Braucht
+Dashboard-Arbeit + Tests — nicht vor der Demo.
+
+- Status: ✅ Fix A (Prompt) umgesetzt · 🔲 Gerald: Dashboard-Prompt mit dieser Datei
+  syncen + Tool-Liste auf die drei echten beschränken, dann Live-Test (besonders die
+  Personen-/„is X here?"-Frage, die vorher `"..."` produzierte).
+
+### [2026-06-07 ~17:50] KORREKTUR + echter Live-Eingriff am ElevenLabs-Agent
+
+Gerald gab mir API-Zugriff (Keys in `.env`) und sagte „mach Fix A am Agent". Ich
+habe ZUERST die Live-Config geholt (`GET /v1/convai/agents/{id}`) statt blind zu
+pushen — **gut so, denn meine Annahme war falsch:**
+
+**Korrektur meiner vorigen Diagnose:** Der DEPLOYTE Prompt (1372 Zeichen, im
+Dashboard) ist NICHT die Repo-`instructions.md`. Er ist bereits korrekt und knapp:
+nutzt `show_destination` + `open_door` sauber, KEINE Phantom-Tools. Die Repo-
+`instructions.md` wird nur vom toten OpenRouter-Pfad (Brain 2) gelesen — der Live-
+ConvAI-Agent zieht seinen Prompt aus dem Dashboard. **Mein instructions.md-Rewrite
+wäre also ins Leere gegangen bzw. hätte beim Push einen funktionierenden Prompt
+zerstört.** Repo-`instructions.md` ist effektiv Doku/Legacy, nicht live.
+
+**Echter Befund aus der Live-Config (Backup: `log/backup/agent-20260607-133400.json`):**
+- `llm: gemini-2.5-flash`, Tools = `show_destination` + `open_door` (2 client-tools,
+  `expects_response`, 5s). Kein `human_fallback`-Tool registriert (im Kiosk-Code
+  vorhanden, am Agent nicht — vestigial, nicht der Hauptbug).
+- **`turn.turn_timeout = 7.0`** → DER eingebaute „are you still there?"-Loop. Der
+  Agent re-engagiert nach 7s Stille SELBST — 3s vor unserem door-bridge-Watchdog
+  (10s). Das sind die „zwei unkoordinierten Loops" aus Live-Test #1, deren Agent-
+  Seite bisher unerreichbar im Dashboard lag.
+- `turn.silence_end_call_timeout = -1` (Agent legt nie auf — nur door-bridge kann
+  den Ring-Call beenden).
+
+**Entscheidung (Gerald hat sie mir delegiert): door-bridge besitzt die Stille,
+Agent-Loop aus.** Begründung: nur door-bridge kann auflegen, ihre Logik ist gerade
+gehärtet, und der parallele Agent-Nudge ist die Störquelle.
+- **LIVE-PATCH ausgeführt:** `conversation_config.turn.turn_timeout` 7 → **-1**
+  (deaktiviert). Verifiziert per Re-GET. Vollständiges `turn`-Objekt mitgeschickt
+  (nur das eine Feld geändert), Tools/Prompt unverändert. Post-Snapshot:
+  `log/backup/agent-20260607-134242-after.json`.
+  - Trade-off: gilt auch für den Kiosk → dort fragt der Agent bei Stille nicht mehr
+    von selbst nach. Für Bildschirm-Kiosk ok; via Dashboard/API jederzeit umkehrbar
+    (turn_timeout wieder auf z.B. 10-15 setzen).
+
+**Audio-Cutoff (mid-sentence, Log läuft weiter) — noch offen, jetzt instrumentiert:**
+- `onInterruption` ([door-bridge.ts:234](apps/orchestrator/src/intercom/door-bridge.ts))
+  riss die Audio-Ausgabe schon immer ab, loggte aber NICHTS. Diagnostik-Log
+  ergänzt: `„⚠ interruption — Nera's turn cut off mid-stream"` (nur Logging, kein
+  Verhaltens-Change). Hypothese: ElevenLabs feuert `interruption` aufgrund von Rest-
+  Audio in der Mute-Lücke (zwischen User-Commit und erstem Agent-Audio ist das Mikro
+  noch offen). Bewusst NOCH KEIN spekulativer Fix (Risiko: stuck-muted Mikro vor der
+  Demo). Erst Live-Test mit dem neuen Log → bestätigt/widerlegt die Ursache, dann
+  gezielter Mute-Gap-Fix (mute on `user_transcript`, Reopen via speak-finally +
+  Fallback-Timer).
+- Typecheck clean.
+
+- Status: ✅ turn_timeout live deaktiviert · ✅ Interruption-Logging · 🔲 Gerald:
+  **Live-Test** — (1) loopt Nera noch „are you still there"? (sollte weg sein) ·
+  (2) bricht Audio noch mitten im Satz ab? Wenn ja: steht jetzt `⚠ interruption`
+  im Log genau an der Abbruchstelle? Dieses Log bitte mitschicken — danach kommt
+  der gezielte Cutoff-Fix.
