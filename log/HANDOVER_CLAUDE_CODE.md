@@ -1,422 +1,568 @@
-# Handover: Nera the Robo Dog — Vollständige Codeanalyse
-**Stand: 2026-06-07 · Nach `git pull origin main` (Commit e0da13b)**
-**Repo: https://github.com/sercinci/nera-the-robo-dog**
-**Hackathon Deadline: Sunday June 7, 14:00**
+# Handover — Nera the Robo Dog (Skills-Team)
+
+**Erstellt:** 2026-06-07 (Neuanlage, da die vorherige Handover-Datei versehentlich
+gelöscht wurde — Inhalt aus Working-Tree + Git-Historie rekonstruiert)
+**Anlass:** Lead Developer ist heute aus privaten Gründen ausgestiegen — Gerald
+übernimmt den Code direkt.
 
 ---
 
-## 1. Was dieses System tut (Überblick)
+## 1. Wo wir stehen (Kurzfassung)
 
-Nera ist ein KI-Türportier. Wenn jemand klingelt, begrüßt sie die Person per Sprache, versteht ihr Anliegen in natürlicher Sprache ("Ich bin zu einem Termin bei der Robotics-Gruppe") und zeigt die Route auf einem 4K-Screen an — alles unter 1 Sekunde Latenz.
+Branch `robo-dog-fix_Version_Gerald`, letzter Commit `73764b0` (fix(door): make
+Ring intercom return-audio audible + multi-turn robust). Seitdem liegt
+**ungecommiteter Working-Tree-Stand** vor — siehe Abschnitt 2. Beide Pakete
+(`@nera/door-intercom`, `@nera/orchestrator`) typecheck aktuell sauber.
 
-**Zwei parallele Audiopfade:**
-- **Browser-Pfad (Kiosk):** ElevenLabs SDK läuft im Browser → gibt `show_destination`-Tool-Call an den Server → Server löst auf, broadcastet ans Display.
-- **Tür-Pfad (Ring-Intercom):** Ring-Türklingel → `packages/door-intercom` streamt PCM vom Türmikrofon → Server-seitige ElevenLabs ConvAI-Session → Neras Stimme wird zurück zum Türlautsprecher gestreamt.
+**Großes Thema der letzten Sessions:** Der Ring-Türlautsprecher war stumm. Das
+ist gelöst (Speaker-Open + Multi-Turn + Serialisierung + Echo-Fix, alle live
+verifiziert — siehe Git-Historie von `73764b0`).
 
----
-
-## 2. Systemarchitektur
-
-```
-Ring Intercom ──[WebRTC PCM]──► packages/door-intercom
-                                        │
-                                        ▼
-Browser (Kiosk) ──[WS PCM]──► apps/orchestrator/src/index.ts
-                                        │
-                           ┌────────────┴────────────────┐
-                           ▼                             ▼
-              intercom/door-bridge.ts          agent/pipeline.ts
-              (Ring-Tür-Pfad)                  (Browser-Kiosk-Pfad)
-                           │                             │
-                           └──────────┬──────────────────┘
-                                      ▼
-                            agent/convai-ws.ts (Tür)
-                            agent/agent.ts (Kiosk via OpenRouter)
-                                      │
-                                      ▼
-                              skills/ (find_person, find_place, ...)
-                                      │
-                                      ▼
-                              contracts/projection.ts → Destination
-                                      │
-                                      ▼
-                              ws-broker.ts → alle Display-Clients
-                              sinks/yodeck.ts (manuell/out-of-band)
-```
+**✅ ENTSCHIEDEN (2026-06-07, Punkt H aus Abschnitt 7):** Ein zwischenzeitlicher,
+NICHT live verifizierter Umbau der Audio-Pipeline (durchgehender Stream statt
+Pro-Turn-Stream + Silence-Padding + `TURN_GAP_MS` 700→2000ms) wurde **verworfen**
+— Gerald hat bestätigt, dass die Konversation mit dem bewährten `73764b0`-Setup
+bereits funktioniert, und ist meiner Empfehlung gefolgt, kein unnötiges Risiko
+kurz vor der Demo einzugehen. `door-bridge.ts`/`door-intercom/index.ts` sind
+jetzt wieder exakt auf `73764b0`-Stand (siehe Abschnitt 2a) — der einzige
+verbleibende Working-Tree-Unterschied zu `73764b0` in diesen beiden Dateien ist
+der neue, additive `human_fallback`-Branch (5 Zeilen).
 
 ---
 
-## 3. Packages & Apps im Überblick
+## 2. Working-Tree-Stand (NICHTS committet — bitte vor weiterem Edit sichern/committen)
 
-### `contracts/` — Single Source of Truth (nicht ändern!)
-- **`contracts.ts`** — alle Zod-Schemas: `DirectoryEntry`, `Person`, `Destination`, `MatchResult`, `Timings`, `SessionState`, `ScreenContent`, `Pose`
-- **`skill.ts`** — `Skill<TArgs, TResult>`, `SkillCtx`, `MatchResult` Interface
-- **`projection.ts`** — `projectDestination()`, `composeReply()` — deterministisch, kein LLM
+```
+ M apps/kiosk/public/kiosk.js
+ M apps/orchestrator/src/intercom/door-bridge.ts   (jetzt: 73764b0 + nur human_fallback-Branch)
+ M skills/instructions.md
+ M skills/registry.ts
+?? skills/human-fallback.ts
+?? assets/offene fixes.xlsx
+ D HANDOVER_CLAUDE_CODE.md          (Stub-Datei, redirectete auf log/…)
+ D log/HANDOVER_CLAUDE_CODE.md      (DIESE Datei — neu angelegt)
+```
 
-### `packages/door-intercom/` — Ring-Türklingel-Integration (NEU seit diesem Pull)
-- Dünne Library über den gepatchten `ring-client-api`-Fork
-- Stellt `DoorIntercom`-Klasse bereit: `start()`, `speak(audio)`, `unlock()`, `endCall()`
-- Event-Callbacks: `onDing`, `onCallStart`, `onAudioChunk` (PCM s16le), `onCallEnd`, `onRefreshToken`
-- `doorIntercomFromEnv()` — factory aus env vars; gibt `null` zurück wenn `RING_REFRESH_TOKEN` fehlt
-- **Wichtig:** Benötigt den gepatchten `ring-client-api`-Fork aus `packages/ring-client-api/` — das npm-Paket hat `startLiveCall()` und `transcodeReturnAudio()` NICHT
+(`packages/door-intercom/index.ts` ist nach dem Revert wieder **byte-identisch**
+zu `73764b0` — kein Diff mehr, daher nicht mehr in der Liste.)
 
-### `packages/ring-client-api/` — Vendorierter Ring API Client (NEU)
-- Lokaler Fork mit `startLiveCall()` (audio-only WebRTC), `transcodeReturnAudio({ endCallOnFinish, onFinished })`
-- Nur `.js` + `.d.ts` — kein Source-Code, nur gebautes Paket
+### 2a. Audio-Pipeline-Umbau — ✅ VERWORFEN (Entscheidung 2026-06-07, Punkt H)
 
-### `apps/orchestrator/` — Herzstück des Systems
+**Was es war:** Ein zwischenzeitlicher Umbau ersetzte die bewährte
+Pro-Turn-Stream-Architektur (`73764b0`: pro Sprech-Turn ein neuer
+`PassThrough`-WAV-Stream → `door.speak()` → seriell über `speakQueue`,
+`activateSpeaker()` intern re-assertet) durch einen **einzigen durchgehenden
+Stream über die gesamte Call-Dauer** plus eine "Audio-Uhr" (`logicalAudioMs`),
+aktive Stille-Injektion (`pushSilence()`, `setInterval` alle 100ms), `public`
+gemachtes `activateSpeaker()` mit direktem Bridge-Aufruf pro Turn, und
+`TURN_GAP_MS` 700 → 2000ms.
 
-**Entrypoint: `src/index.ts`**
-- HTTP-Server (Port 8787) der auch den Kiosk serviert (`apps/kiosk/public/`)
-- `/config` Endpoint liefert `{ agentId, directory }` an den Browser
-- WebSocket-Broker für alle Clients
-- State Machine (IDLE → WELCOME → LISTEN → PROCESS → RESPOND → CLARIFY → DONE)
-- Zwei Pfade: Browser-Kiosk-Pfad (ElevenLabs SDK im Browser) + Tür-Pfad (Ring-Intercom)
+**Warum verworfen:** Gerald hat bestätigt, dass die Konversation mit dem
+**bewährten, live verifizierten** `73764b0`-Setup bereits funktioniert (siehe
+Abschnitt 3). Der Umbau war damit eine unbelegte Komplexitätssteigerung kurz vor
+der Demo — höheres Risiko (Timing-Drift, Knackser an Audio/Stille-Übergängen)
+ohne nachgewiesenen Nutzen. Klare Empfehlung war daher: verwerfen statt live
+verifizieren.
 
-**`src/intercom/door-bridge.ts`** (NEU — zentraler neuer Baustein)
-- Verdrahtet Ring-Intercom ↔ ElevenLabs ConvAI (server-seitig) ↔ Browser-Display
-- Half-Duplex: Türmikrofon wird gemutet während Nera spricht
-- Tool-Handling: `show_destination` → `resolveQuery()` → Broadcast, `open_door` → `door.unlock()`
-- Ring-Refresh-Token wird persistent in `.ring-token` gespeichert (bei jedem Neustart bevorzugt)
-- PCM-Verstärkung (DOOR_GAIN=3) für den leisen Türlautsprecher
+**Durchgeführt:**
+- `apps/orchestrator/src/intercom/door-bridge.ts` → 1:1 auf `73764b0`-Stand
+  zurückgesetzt (Pro-Turn-Stream, `TURN_GAP_MS = 700`, `DEBUG_WAV`/`pcmToWav`/
+  `micSent` wieder aktiv — die "toten Code"-Funde aus der vorigen Session sind
+  damit wieder lebendiger, bewährter Code, keine Archivierung nötig), danach
+  der `human_fallback`-Branch erneut ergänzt (additiv, 5 Zeilen, siehe 2b).
+- `packages/door-intercom/index.ts` → `activateSpeaker()` zurück auf `private`
+  (1-Zeilen-Diff rückgängig gemacht — die `doSpeak()`-interne Re-Assertion aus
+  `73764b0` übernimmt die Funktion wieder, kein externer Zugriff mehr nötig).
+- Verifiziert: `git diff 73764b0 -- door-bridge.ts` zeigt nur noch den
+  `human_fallback`-Branch (+5 Zeilen); `door-intercom/index.ts` hat **keinen**
+  Diff mehr zu `73764b0`. Beide Pakete typecheck clean (`tsc --noEmit` exit 0).
 
-**`src/agent/convai-ws.ts`** (NEU — ElevenLabs WS für den Tür-Pfad)
-- `ConvaiSession`: direkte WS-Verbindung zu `wss://api.elevenlabs.io/v1/convai/conversation`
-- Sendet `user_audio_chunk` (base64 PCM), empfängt `audio` (Neras Stimme als PCM), `client_tool_call`
-- Tür-Pfad: kein xi-api-key (öffentlicher Agent → anonymous connect), sonst 403
+**Resteffekt auf Abschnitt 9 (Dead-Code-Archiv-Plan, siehe unten):** Die
+Einträge `DEBUG_WAV`/`pcmToWav` und `micSent` sind hinfällig — sie sind durch
+den Revert wieder Teil des aktiven, bewährten Codes. Nur `this.speaking` in
+`DoorIntercom` bleibt als eigenständiger, vom Umbau unabhängiger
+Archiv-Kandidat übrig (siehe aktualisierte Tabelle in Abschnitt 9).
 
-**`src/agent/agent.ts`** — OpenRouter Tool-Calling (für Browser-Kiosk-Pfad)
-- Einmaliger LLM-Call, `tool_choice: "required"` → Modell muss immer einen Skill callen
-- OpenRouter-Client (OpenAI-kompatibel), default Modell: `openai/gpt-4o-mini`
-- Kein Tool-Call → `noMatchDestination()`
+**🔲 Trotzdem offen:** Live-Verifikation steht weiterhin aus — aber jetzt nur
+noch für den NEUEN Teil (`human_fallback`-Branch), nicht mehr für die gesamte
+Audio-Pipeline. Das reduziert das Verifikations-Risiko erheblich.
 
-**`src/agent/tools.ts`** — deterministische Hilfsfunktionen
-- `toToolSpecs()`: Skills → OpenAI Function Tool Specs (via `zod-to-json-schema`)
-- `resolveWithSkill()`: Skill-Call → `MatchResult` → `projectDestination()`
-- `resolveQuery()`: free-text query → versucht erst `find_place`, dann `find_person`
-- `renderDirectoryForAgent()`: Directory als Text für ElevenLabs `{{directory}}` Dynamic Variable
-- `buildSystemPrompt()`: Instructions.md + bekannte Orte + bekannte Personen
+### 2b. Neuer Skill: `human_fallback`
 
-**`src/pipeline.ts`** — eine Konversations-Turn (für Browser-Kiosk-Pfad)
-- `createPipeline()` → lädt `instructions.md`, baut SystemPrompt
-- `runTurn(transcript, sessionId)` → `{ destination, replyText, turn, agent }`
+`skills/human-fallback.ts` (neu, additiv):
+- Zod-Args: leeres Objekt (`{}`)
+- `name: "human_fallback"`, gibt `MatchResult` mit `destinationId: null`,
+  `confidence: 1.0`, `status: "resolved"` zurück
+- in `skills/registry.ts` importiert und ans Ende des `skills`-Arrays gehängt
 
-**`src/ws-broker.ts`** — WebSocket-Broker
-- Zwei Rollen: `"audio"` (Kiosk-Browser) und `"display"` (alle Display-Clients)
-- Events in: `hello`, `ring`, `audio`, `resolve`, `unlock`, `speech_end`, `welcome_done`
-- Events out: `destination`, `idle`, `play_welcome`, `tts_chunk`, `tts_end`, `state`, `resolve_result`, `agent_audio`, `door_state`
+Verdrahtung an drei weiteren Stellen:
+- **`door-bridge.ts`** `onToolCall`: neuer Branch `if (name === "human_fallback")`
+  → setzt `broker.doorState("fallback")` und antwortet mit der Standardphrase
+  *"Let me get someone from the team to help you — just one moment!"*
+- **`apps/kiosk/public/kiosk.js`**: neuer Tool-Handler `human_fallback` im
+  `sessionCommon().clientTools`-Objekt (für den Browser-/Kiosk-Pfad, analog zum
+  Türpfad) — zeigt einen Snack "Calling a staff member…" und Status-Text
+  "Calling human assistance…"
+- **`skills/instructions.md`**: Formulierungen präzisiert — aus "→
+  `human_fallback`" wurde an mehreren Stellen "→ trigger `human_fallback`" /
+  "When you trigger the `human_fallback` tool (or if you are unable to trigger
+  it), say exactly this phrase…" — macht den Skill-Aufruf für den Agenten
+  expliziter (vorher klang es eher wie eine Beschreibung des Resultats, jetzt
+  wie eine Handlungsanweisung).
 
-**`src/stt/elevenlabs.ts`** — ElevenLabs Scribe v2 Realtime STT (für Browser-Kiosk-Pfad)
-- WebSocket, VAD-basierter Commit, Partials + committed Transcript
-
-**`src/tts/elevenlabs.ts`** — ElevenLabs TTS Streaming (für Browser-Kiosk-Pfad)
-
-**`src/audio/wav.ts`** — PCM ↔ WAV Konvertierung (für Tür-Pfad: Neras Stimme als WAV ans Türtelefon)
-- `pcmToWav()`, `wavHeader()`, `WAV_STREAM_DATA_SIZE`, `amplifyPcm()`
-
-**`src/sinks/yodeck.ts`** — Yodeck API Sink (manuell / out-of-band)
-- `takeoverKey()`, `takeoverMedia()`, `clear()`, `listImages()`, `listScreens()`
-- Bewusst NICHT auf dem Per-Visitor-Hotpath (Latenz), nur für manuellen Screen-Takeover
-
-**`src/sinks/yodeck-images.ts`** — Map von `key → Yodeck media id` (aktuell LEER)
-
-**`src/config.ts`** — alle env vars, typisiert via Zod
-
-**`src/session.ts`** — State Machine (IDLE/WELCOME/LISTEN/PROCESS/RESPOND/CLARIFY/DONE)
-
-**`src/timing.ts`** — Latenz-Messung pro Turn (`Turn.mark()`, `turn.heroMs()`, `turn.segments()`)
-
-**`src/dev/`** — Dev-Tools:
-- `harness.ts`: lokaler Test ohne Browser
-- `kiosk-sim.ts`, `stt-probe.ts`: ElevenLabs STT testen
-- `convai-probe.ts`: ElevenLabs ConvAI testen (NEU)
-- `door-talkback-test.ts`: Tür-Pfad testen (NEU)
-- `yodeck-push.ts`: manuelles Yodeck-CLI
-
-### `apps/kiosk/public/` — Browser-Kiosk (läuft am Laptop)
-- **`kiosk.js`** — ElevenLabs SDK im Browser, zwei Client-Tools: `show_destination` (→ WS `resolve`) und `open_door` (→ WS `unlock`)
-- Door-Path Playback: empfängt `agent_audio` (PCM base64) vom Server und spielt es ab (Web Audio API)
-- Verbindet via WS zum Orchestrator, Auto-Reconnect
-- **`index.html`** — Neras UI: Face (idle/listening/talking), Status, Destination-Card, Latency-Overlay, Door-State-Snack
-
-### `skills/` — Agent-Skills
-- **`find-person.ts`** — Fuzzy-Suche nach Person per Name/Alias → `{ destinationId: person.locatedAt }`
-- **`find-place.ts`** — Fuzzy-Suche nach Raum/Zone/Event → `{ destinationId: entry.id }`
-- **`check-appointment.ts`** — Termin-Validierung: `person.event → event.startsAt/endsAt` mit ±30min Fenster (Europe/Vienna)
-- **`navigate-floor.ts`** — Go2-Navigation: lädt floor-spezifische `waypoints.json`, gibt `(x,y,yaw)` zurück
-- **`registry.ts`** — Skill-Registry (alle Skills hier registriert)
-- **`instructions.md`** — Agent-Systempromt (ElevenLabs-Best-Practices-Format)
-
-### `data/`
-- **`directory.json`** — Räume, Zonen, Events mit `startsAt`/`endsAt` (ISO 8601 +02:00)
-- **`people.json`** — Personen mit Rollen, Aliases, `locatedAt`, `event`
-
-### `assets/planimetry/`
-- 25 PNGs (1920×1080), generiert via `tools/gen-planimetry.py`
-- Pro Directory-Eintrag: Schemaplan mit "YOU ARE HERE"-Pin
-- ILLUSTRATIV (nicht vermessen) — Fußzeile macht das transparent
+**⚠️ Lücke gefunden (noch offen, nicht behoben):** `onDoorState()` in
+`apps/kiosk/public/kiosk.js:90-109` hat KEINEN `else if (state === "fallback")`-
+Zweig. D.h. wenn die Bridge `broker.doorState("fallback")` sendet, passiert auf
+dem Display **visuell nichts** — der State wird zwar broadcastet, aber die UI
+reagiert nicht darauf (kein Snack/Status-Update auf dem Kiosk-Screen für den
+Türpfad-Fallback-Fall). Müsste ergänzt werden, falls das visuelle Feedback am
+Screen gewünscht ist.
 
 ---
 
-## 4. Env Vars / Konfiguration
+## 3. Was bereits FERTIG und live verifiziert ist (aus `73764b0` und davor)
 
-| Variable | Beschreibung | Required für... |
-|---|---|---|
-| `ELEVENLABS_API_KEY` | STT + TTS | Browser-Kiosk-Pfad |
-| `ELEVENLABS_AGENT_ID` | ConvAI Agent ID | Beide Pfade |
-| `ELEVENLABS_TTS_VOICE_ID` | Neras Stimme (Fallback-Pipeline) | Browser-Kiosk-Pfad |
-| `OPENROUTER_API_KEY` | OpenRouter Agent | Browser-Kiosk-Pfad |
-| `OPENROUTER_MODEL` | default: `openai/gpt-4o-mini` | Browser-Kiosk-Pfad |
-| `RING_REFRESH_TOKEN` | Ring-Account-Token | Tür-Pfad |
-| `RING_INTERCOM_DEVICE_ID` | optional: spezifisches Gerät | Tür-Pfad |
-| `YODECK_API_TOKEN` | `label:value` Format | Yodeck-Sink |
-| `YODECK_SCREEN_ID` | Screen-ID (740139 = Screen 1) | Yodeck-Sink |
-| `GO2_FOXGLOVE_URL` | unset = dry-run | Go2-Sink |
-| `PORT` | default: 8787 | immer |
+Alle vier Tür-Audio-Probleme aus den Vortagen sind gelöst (Details siehe
+`git show 73764b0:log/HANDOVER_CLAUDE_CODE.md` falls nötig — Volltext der alten
+Session-Logs ist in der Git-Historie von Commit `73764b0` erhalten, auch wenn
+die Datei seitdem gelöscht wurde):
 
-**Sonderfall:** Ring-Refresh-Token rotiert bei jeder Nutzung → wird in `.ring-token` (gitignored) persistiert. Bei Server-Neustart bevorzugt gegenüber `.env`.
+1. **Lautsprecher öffnet sich** — `activateSpeaker()` sendet `camera_options
+   {stealth_mode:false}` ungated (Root Cause: Fork-`activateCameraSpeaker()`
+   ist auf nie-feuerndes `camera_connected`-Event gated)
+2. **Multi-Turn hörbar** — Re-Assert pro Turn (Ring mutet nach jeder Äußerung neu)
+3. **Back-to-Back-Drop behoben** — `speak()` serialisiert über `speakQueue`
+4. **Echo/Selbst-Trigger behoben** — `speakingCount`-Zähler statt Boolean in
+   der Bridge (Mikro bleibt stumm bis ALLE gequeueten Äußerungen fertig sind)
 
 ---
 
-## 5. Datenpfade (wie alles zusammenhängt)
+## 4. Offene Punkte (Priorität für sauberen Demo-Flow)
 
-### Browser-Kiosk-Pfad (ElevenLabs SDK im Browser)
-```
-Browser: Nutzer klickt Ring → ElevenLabs SDK Conversation.startSession()
-  → ElevenLabs führt STT+LLM+TTS aus
-  → Wenn Agent show_destination aufruft:
-      Browser WS → { type: "resolve", query, reqId }
-      Server: resolveQuery(skills, query, data) → Destination
-      Server: broker.broadcastDestination(dest)
-      Server: broker.resolveResult(clientId, reqId, { result, status, ... })
-      Browser: ElevenLabs Agent spricht die Confirmation
-  → Wenn Agent open_door aufruft:
-      Browser WS → { type: "unlock", reqId }
-      Server: doorIntercom.unlock() (falls Ring-Call aktiv)
-      Server: broker.doorState("unlocked")
-```
+Diese drei waren bereits am Ende der letzten Session als TODO markiert und sind
+**weiterhin offen** (nicht Teil des aktuellen Working-Tree-Umbaus):
 
-### Tür-Pfad (Ring-Intercom)
-```
-Ring Klingel → door-intercom onDing → openCall() → WebRTC-Session
-  → onCallStart → startConversation() → ConvaiSession erstellt
-  → Besucher spricht → onAudioChunk PCM → (wenn !speaking) convai.sendAudio()
-  → ConvAI → onAgentAudio PCM → broker.agentAudio() (alle Browser)
-                              → amplifyPcm(×3) → door.speak(WAV-Stream)
-  → ConvAI Tool-Call "show_destination" → resolveQuery() → broadcastDestination()
-  → ConvAI Tool-Call "open_door" → door.unlock()
-  → Half-Duplex: speaking=true während Nera spricht → Türmikrofon gemutet
-```
+**A) Konversations-Lifecycle / Call-Ende** — Hauptthema.
+Nach `open_door` (Aufgabe erledigt) läuft der Call aktuell bis zum
+`maxCallMs`-Hard-Cap (120s) weiter; Nera loopt mit "Are you still there?" auf
+echte Stille. Geralds Entscheidung dazu (Session-Log `73764b0`,
+06:35-Eintrag): **Call nach `open_door` beenden, ABER Destination auf dem
+Yodeck-Screen halten** (nicht sofort idle). Konkret zu bauen in
+`apps/orchestrator/src/intercom/door-bridge.ts`:
+1. Im `open_door`-Tool-Handler nach erfolgreichem `unlock()`: kurze
+   Verzögerung (Nera Abschiedszeile sprechen lassen), dann `door.endCall()`.
+2. **Display-Idle vom Call-Ende entkoppeln:** `onCallEnd` ruft aktuell sofort
+   `broker.broadcastIdle()` (Zeile 232) — das würde die gerade gezeigte
+   Destination sofort wieder löschen. Stattdessen: letzte gezeigte Destination
+   tracken und erst nach `DISPLAY_HOLD_MS` (Vorschlag ~60s) idlen.
 
----
+**B) Agent-Prompt** (`skills/instructions.md`) — Nera soll nach erledigtem
+Anliegen abschließen statt zu loopen ("Are you still there?").
 
-## 6. Tests
+**C) Taub-Fenster bei `visitor: "..."`** — unbestätigt, ob Ursache das
+half-duplex-Mikro-Timing (`TURN_GAP_MS` + ffmpeg-Drain) oder ConvAI-VAD ist.
+Mit `DOOR_DEBUG=1` messen: `captured`/`dropped`-Chunks pro Fenster.
+**Achtung:** `TURN_GAP_MS` wurde im aktuellen Working-Tree-Stand von 700ms auf
+2000ms erhöht — das verändert dieses Mess-Setup direkt. Vor der nächsten Messung
+prüfen, ob das beabsichtigt war oder das Taub-Fenster-Problem eher verschärft.
 
-```
-apps/orchestrator/vitest.config.ts
-```
-
-Alle Tests mit `pnpm -F @nera/orchestrator test` ausführen.
-
-| Datei | Was getestet wird | Status |
-|---|---|---|
-| `src/data.test.ts` | Laden und Validieren von directory.json/people.json | ✅ |
-| `src/agent/tools.test.ts` | find_person, find_place, resolveQuery, renderDirectory | ✅ |
-| `src/audio/wav.test.ts` | WAV-Header, PCM→WAV, amplifyPcm | ✅ |
-| `src/sinks/yodeck.test.ts` | Yodeck API Builder-Funktionen (unit, kein HTTP) | ✅ |
-| `src/session.test.ts` | State Machine Transitions | ✅ |
-| `src/timing.test.ts` | Turn-Timing-Messungen | ✅ |
-| `src/config.test.ts` | Env-Parsing | ✅ |
-
-**Letzter bekannter Stand: 43/43 grün** (vor dem Pull vom 2026-06-07)
+**D) Yodeck-Ist-Stand** — noch nicht geprüft, ob der physische Screen als
+Web-Page-Player auf die Live-Display-URL eingerichtet ist. Test-Optionen:
+- Display-URL im Browser öffnen (welche Route, aus `apps/orchestrator/src/index.ts`
+  + `apps/kiosk` ableiten) → Destination triggern → erscheint sie?
+- Yodeck-REST via `tsx apps/orchestrator/src/dev/yodeck-push.ts screens` / `list`
+- Einmaliges Dashboard-Setup (Screen → Web-Page-Player → Display-URL), dann
+  visuell am echten TV prüfen (kein direkter Remote-Zugriff auf den TV möglich)
 
 ---
 
-## 7. Offene / unfertige Items
+## 5. Run / Verify — Befehle
 
-### ⚠️ Höchste Priorität (Demo-kritisch)
-1. **`sinks/yodeck-images.ts` ist LEER** — `IMAGE_MEDIA_IDS` hat keine Einträge. Bilder müssen in Yodeck hochgeladen werden, dann via `tsx src/dev/yodeck-push.ts list` die media-ids holen und eintragen.
-2. **Ring-Refresh-Token** muss initial gesetzt werden. Generierung via: `node packages/ring-client-api/lib/ring-auth-cli.js`
-3. **Tests nach Pull nicht geprüft** — nach dem großen Pull (110 Dateien) sollten Tests lokal laufen: `pnpm -F @nera/orchestrator test`
+```powershell
+# Voller Lauf (in apps/orchestrator)
+$env:DEBUG="ring"; $env:DOOR_DEBUG="1"; corepack pnpm dev
 
-### 🔲 Fehlende Features
-4. **`apps/agent-runner/`** — war in einem separaten Branch (`agentic-skills`) und ist im Main-Repo in einem eigenen App-Ordner. Der Ordner enthält eigene `agent.ts`, `loader.ts`, `server.ts` — das ist ein älterer paralleler Runner, der möglicherweise veraltet ist. Verhältnis zu `apps/orchestrator/src/agent/` klären.
-5. **Waypoints in `skills/navigate-floor-*/waypoints.json`** — alle Koordinaten sind PLACEHOLDER. On-site Mapping nötig (Floor 4 / Robotics Club hat Priorität für Use-Case 1 Demo).
-6. **Go2-Sink** — `GO2_FOXGLOVE_URL` ist env-gated (unset = dry-run). Nur relevant wenn echter Roboter verfügbar.
-7. **`apps/display-pi/`** existiert im Repo-Baum in der Architektur-Doku, aber nicht als Code-Ordner — Pi-Display läuft über den Kiosk-Code oder statische Bilder.
+# Typecheck
+corepack pnpm -F @nera/door-intercom exec tsc --noEmit
+corepack pnpm -F @nera/orchestrator exec tsc --noEmit
 
-### 🔲 Out-of-band Yodeck-Setup
-8. One-time Web-Page-Assignment: Live-Display-URL als Yodeck-Web-Page-Player eintragen. `§4.7`: Screen rendert Live-WS-Seite, kein per-Visitor-Push.
+# Offline-Audio-Diagnose (ohne Hardware)
+corepack pnpm -F @nera/orchestrator exec tsx src/dev/door-diag.ts
+corepack pnpm -F @nera/orchestrator exec tsx src/dev/door-diag-rtp.ts
+corepack pnpm -F @nera/orchestrator exec vitest run src/audio/wav.diag.test.ts
 
----
-
-## 8. Wie man das System startet
-
-```bash
-# 1. Dependencies
-pnpm install
-
-# 2. .env anlegen
-cp .env.example .env
-# .env befüllen: ELEVENLABS_API_KEY, ELEVENLABS_AGENT_ID, OPENROUTER_API_KEY
-# Optional: RING_REFRESH_TOKEN für Tür-Pfad
-
-# 3. Orchestrator starten
-cd apps/orchestrator
-pnpm dev  # oder: pnpm exec tsx src/index.ts
-
-# 4. Browser öffnen
-# http://localhost:8787
-# → Kiosk UI: "🔔 Ring doorbell" klicken → ElevenLabs Session startet
-```
-
-**Dev-Tools:**
-```bash
-# Tür-Pfad testen (ohne Browser)
-tsx apps/orchestrator/src/dev/door-talkback-test.ts
-
-# ConvAI direkt testen
-tsx apps/orchestrator/src/dev/convai-probe.ts
+# Live-Probe (Hardware vor Ort, einmal klingeln)
+$env:DEBUG="ring"; corepack pnpm -F @nera/orchestrator exec tsx src/dev/door-diag-live.ts
 
 # Yodeck-CLI
-tsx apps/orchestrator/src/dev/yodeck-push.ts screens
-tsx apps/orchestrator/src/dev/yodeck-push.ts list
+corepack pnpm -F @nera/orchestrator exec tsx src/dev/yodeck-push.ts screens
+corepack pnpm -F @nera/orchestrator exec tsx src/dev/yodeck-push.ts list
 ```
+
+Hinweise: `pnpm` nur via `corepack` (nicht im PATH); Node v22 aktiv (Projekt
+will `>=24`, läuft aber mit Warning). Ring-Refresh-Token wird automatisch nach
+`.ring-token` persistiert (gitignored) und beim Start bevorzugt geladen.
+
+### ⚠️ Logging fürs Debugging — für die neue Chat-Session wichtig
+
+Drei unabhängig zuschaltbare Logging-Ebenen, alle env-gated (Standardlauf bleibt
+unverändert, kein Risiko durch Aktivieren):
+
+| Env-Var | Was es zeigt | Wo im Code |
+|---|---|---|
+| `$env:DEBUG="ring"` | Rohes `ring-client-api`-Protokoll-Logging (Sessions, WebRTC-Connection-State, `camera_options`, etc.) — **das einzige Fenster in die Ring-Lowlevel-Kommunikation** | kommt aus dem vendored Fork `packages/ring-client-api/`, kein eigener Code |
+| `$env:DOOR_DEBUG="1"` | Pro Turn: `🎤 MUTE — captured N chunks during last listen window` / `🎤 OPEN — dropped N chunks while Nera spoke` (Mikro-Mute-Diagnose, `micSent`/`micDropped`-Zähler) | [door-bridge.ts:35](apps/orchestrator/src/intercom/door-bridge.ts:35), Logs bei [:101-103](apps/orchestrator/src/intercom/door-bridge.ts:101) und im `finally` von `doSpeak` |
+| (immer an) `log.debug`/`log.info` | Turn-Events (`[door] 🔊 streaming…`, `[door] ✓ finished speaking…`, `[door] Nera: "…"`, `[door] visitor: "…"`), State-Wechsel (`doorState`), Tool-Calls | durchgehend in [door-bridge.ts](apps/orchestrator/src/intercom/door-bridge.ts) |
+
+**Zusätzlich, für gezielte Audio-Verifikation ohne Hardware:**
+- `DEBUG_WAV = "/tmp/nera-door-last.wav"` ([door-bridge.ts:22](apps/orchestrator/src/intercom/door-bridge.ts:22))
+  — nach jedem Turn wird der an die Tür gestreamte (verstärkte) Audio-Ausschnitt
+  als WAV gedumpt (`pcmToWav` in `endTurn()`). Direkt anhörbar zur Verifikation,
+  *was die Tür tatsächlich empfängt* (inkl. Gain-Boost).
+- Offline-Testsets (kein Buzz nötig): `door-diag.ts` (ffmpeg-Encode-Matrix),
+  `door-diag-rtp.ts` (RTP-Mux-Probe), `wav.diag.test.ts` (WAV/Amplify-Unit-Test)
+  — siehe Befehle oben.
+- `door-diag-live.ts` für gezielte Live-A/B-Proben am Gerät (z. B. Ton vor/nach
+  einem Signalling-Schritt, um Hypothesen zu bestätigen — siehe wie das Root
+  Cause des Lautsprecher-Problems damit gefunden wurde, Git-Historie `73764b0`).
+
+**Empfehlung für die neue Session:** beim Befehl aus der ersten Zeile oben
+direkt mit beiden Flags starten:
+```powershell
+$env:DEBUG="ring"; $env:DOOR_DEBUG="1"; corepack pnpm dev
+```
+Das gibt von Anfang an die volle Sicht auf Ring-Protokoll + Mikro-Timing +
+Turn-Events — deutlich effizienter, als nachträglich neu zu starten, wenn ein
+Problem auftritt.
 
 ---
 
-## 9. Wichtige Constraints (für jeden LLM-Coder)
+## 6. Wichtige Constraints (für jeden Coder an diesem Repo)
 
 - **`contracts/` nicht ändern** — Spine-Team-Eigentum
 - **Skills geben nur `MatchResult` zurück** — nie Screen-Content, nie Sprache
 - **Nur `zod` + Node stdlib in Skills** — keine externen Deps
 - **Kein Credentials-Commit** — `.env.example` für Secrets
-- **Ring-Refresh-Token rotiert** — immer `onRefreshToken` callback implementieren
+- **Ring-Refresh-Token rotiert** — `onRefreshToken`-Callback ist verdrahtet, nicht anfassen
 - **Tür-Pfad: public agent, kein xi-api-key** — sonst 403 von ElevenLabs
 - **Half-Duplex** — Türmikrofon muss gemutet sein während Nera spricht
+- **Vendored Fork** (`packages/ring-client-api/`) NICHT anfassen — `VENDORED.md` beachten
 
 ---
 
-## 10. Kritischer Pfad zur Demo
+## 7. Action-Plan: Offene Fixes (Geralds Review aus `assets/offene fixes.xlsx`, Stand 2026-06-07)
 
+Gerald hat die offenen Punkte aus Abschnitt 4 priorisiert/präzisiert und als Excel
+zurückgegeben (`assets/offene fixes.xlsx`, Spalte „erwartete aktion"). Das ist
+jetzt die verbindliche Zielbeschreibung. Reihenfolge unten = Abarbeitungsreihenfolge.
+**Architektur-Frage zu `open_door` (instructions.md:51 vs. Tool-Wiring) wird
+bewusst NICHT in diesem Durchgang behandelt — klären wir, nachdem A–H erledigt sind.**
+
+### A) Call-Ende nach `open_door`
+**Geralds Vorgabe:** Bevor die Tür geöffnet wird, soll Nera fragen, ob noch eine
+Frage offen ist. Sagt der Besucher sinngemäß „nein, danke" → Tür öffnen UND
+danach den Call beenden.
+
+**Schritte:**
+1. `skills/instructions.md` (Skills-Team-Bereich, aber hier dokumentiert): vor
+   dem `open_door`-Tool-Call eine Abschluss-Frage einbauen, z. B. *"Before I let
+   you in — is there anything else I can help you with?"* Erst bei Verneinung
+   ruft Nera `open_door` auf.
+2. `apps/orchestrator/src/intercom/door-bridge.ts` — `open_door`-Branch
+   ([:147-158](apps/orchestrator/src/intercom/door-bridge.ts:147)): nach
+   erfolgreichem `unlock()` + `respond(...)` eine kurze Verzögerung einbauen
+   (Nera ihre Abschiedszeile sprechen lassen — z. B. via `setTimeout` nach dem
+   `onAgentResponse`/`speakingCount`-Zyklus), dann `door.endCall()`.
+
+**Status:** 🔲 offen — Schritt 1 ist Prompt-Arbeit (Skills-Team/Gerald), Schritt 2 Code (Bridge).
+
+### B) Display-Hold beim Call-Ende
+**Geralds Vorgabe:** Display soll nach Call-Ende noch **100 Sekunden** stehen
+bleiben (nicht die von mir vorgeschlagenen ~60s), damit sich der Besucher
+zurechtfindet.
+
+**Schritte:**
+1. `door-bridge.ts` — Konstante `DISPLAY_HOLD_MS = 100_000` einführen (analog zu
+   `TURN_GAP_MS`/`DOOR_GAIN` am Dateikopf).
+2. Letzte gezeigte Destination + ein „shownThisCall"-Flag auf Bridge-Ebene tracken
+   (gesetzt im `show_destination`-Branch, [:159-171](apps/orchestrator/src/intercom/door-bridge.ts:159)).
+3. `onCallEnd` ([:216-233](apps/orchestrator/src/intercom/door-bridge.ts:216)):
+   `broker.broadcastIdle()` NICHT mehr sofort aufrufen, sondern — falls eine
+   Destination gezeigt wurde — erst nach `DISPLAY_HOLD_MS` per `setTimeout`.
+   `broker.doorState("idle")` kann sofort bleiben (betrifft nur den
+   Gesprächsstatus, nicht den Screen-Inhalt).
+
+**Status:** 🔲 offen, baut auf A auf (A definiert den Moment, ab dem der Hold-Timer startet).
+
+### C) Agent-Prompt-Loop-Fix
+**Geralds Vorgabe:** *„siehe #A"* — wird durch die Lösung von A miterledigt: die
+Abschluss-Frage + das gezielte Call-Ende ersetzen das ungebremste
+„Are you still there?"-Loopen für den „Aufgabe erledigt"-Fall.
+
+**Status:** ✅ wird durch A gelöst — kein separater Schritt nötig.
+
+### D) Inaktivitäts-/Taub-Fenster-Logik (ersetzt die reine `TURN_GAP_MS`-Frage)
+**Geralds Vorgabe (sehr konkret, das ist jetzt die Spezifikation):**
+- Es soll **ausschließlich natürliche Sprache** erkannt/angenommen werden.
+- Pausen von **2–10 Sekunden** = normales Nachdenken → tolerieren, Hintergrundrauschen ignorieren, NICHT eingreifen.
+- Pause **> 10 Sekunden** → Nera fragt einmal nach, ob der Besucher noch da ist.
+  - kommt eine Antwort → Konversation normal fortsetzen.
+  - kommt keine Antwort → *"Vielen Dank für Ihren Besuch, bis zum nächsten Mal"* sagen und die Konversation/den Call beenden.
+
+**Wichtige Klarstellung — zwei verschiedene Zeitfenster nicht verwechseln:**
+- `TURN_GAP_MS` (aktuell 2000ms, [door-bridge.ts:33](apps/orchestrator/src/intercom/door-bridge.ts:33))
+  beschreibt, wie lange NACH Neras letztem Audio-Chunk gewartet wird, bis ihr Turn
+  als beendet gilt und das Mikro wieder öffnet — das ist NICHT dasselbe wie die
+  2–10s-Denkpause, die der Besucher NACH Mikro-Öffnung braucht, um zu antworten.
+- Geralds Spezifikation betrifft die zweite Achse: Inaktivität auf Besucherseite,
+  nachdem das Mikro offen ist.
+
+**Schritte:**
+1. Neue Konstante in `door-bridge.ts`, z. B. `INACTIVITY_PROMPT_MS = 10_000` —
+   getrennt von `TURN_GAP_MS` (nicht wiederverwenden/überladen).
+2. Inaktivitäts-Timer auf Bridge-Ebene: läuft, solange das Mikro offen ist
+   (`speakingCount === 0`) und kein Visitor-Audio committed wird; bei Ablauf
+   → einmaliger „Sind Sie noch da?"-Prompt auslösen (Cap analog `REPROMPT_CAP`
+   im Kiosk-Pfad, [session.ts:13](apps/orchestrator/src/session.ts:13) — hier
+   z. B. `STILL_THERE_CAP = 1`).
+3. Bleibt die Antwort aus → Abschiedszeile + `door.endCall()` (gleicher
+   Mechanismus wie in A, ggf. wiederverwendbar).
+4. `skills/instructions.md` entsprechend ergänzen: die exakte Abschiedsformel
+   *"Vielen Dank für Ihren Besuch, bis zum nächsten Mal"* (oder die EN-Variante
+   dazu, je nach Sprache des Agenten) als verbindlichen Wortlaut hinterlegen —
+   genau wie es bei `human_fallback` schon gemacht wurde ([instructions.md:42-44](skills/instructions.md:42)).
+5. **`TURN_GAP_MS` separat behandeln:** unverändert lassen oder mit
+   `DOOR_DEBUG=1`-Messdaten (captured/dropped chunks) evidenzbasiert justieren —
+   NICHT im selben Zug wie die Inaktivitäts-Logik anfassen, sonst vermischen
+   sich zwei unabhängige Variablen und Messergebnisse werden uninterpretierbar.
+
+**Status:** 🔲 offen — eigenständiger Implementierungsblock, klar spezifiziert.
+
+### E) Yodeck-Setup
+**Geralds Vorgabe:** *„wird gerade aufgesetzt"* — läuft bereits bei Gerald/Team.
+
+**Status:** ℹ️ kein Code-Task — nur beobachten, ob nach Abschluss ein
+`YodeckSink`-Wiring (`apps/orchestrator/src/sinks/yodeck.ts`) nötig wird oder der
+Web-Page-Player-Ansatz (Live-Display-URL) reicht.
+
+### F) `notify_host`
+**Geralds Vorgabe:** Erst prüfen, ob der Tool-Call überhaupt gebraucht wird und
+wofür — vor jeder Implementierung Rücksprache halten und abklären.
+
+**Schritte (kein Code — Klärungsbedarf dokumentieren):**
+1. Frage ans Spine-/Skills-Team: Wird `notify_host` für die Demo gebraucht
+   (z. B. für Use-Case 2 „Known + no appointment", siehe `CLAUDE.md` Tabelle
+   „Visitor Types & Scenarios")? Wer baut's, wenn ja?
+2. **Bis zur Klärung:** `instructions.md:30`/`:83` NICHT so stehen lassen, wie
+   es ist — siehe Match-Analyse Punkt 2 unten (das Prompt verspricht aktuell
+   eine Aktion, die ins Leere läuft).
+
+**Status:** 🔲 offen — Entscheidung liegt nicht bei mir, nur Vorbereitung/Dokumentation.
+
+### G) `human_fallback`-UI am Kiosk
+**Geralds Vorgabe:** *„schlag einen Lösungsansatz vor"*
+
+**Mein Vorschlag:** In `onDoorState()` ([kiosk.js:90-109](apps/kiosk/public/kiosk.js:90))
+einen Zweig analog zu den bestehenden States ergänzen:
+
+```js
+else if (state === "fallback") {
+  els.status.textContent = "Calling a staff member…";
+  showSnack("🙋 Getting someone from the team…", { kind: "fallback" });
+}
 ```
-✅ Ring klingelt → ConvAI Session öffnet
-✅ Besucher spricht → STT via ElevenLabs → ConvAI antwortet
-✅ show_destination Tool-Call → resolveQuery → Destination auf Screen
-✅ open_door Tool-Call → door.unlock()
-✅ Neras Stimme → Türlautsprecher (door-bridge + WAV-Streaming)
-✅ Browser zeigt door_state (ringing/active/speaking/listening/unlocked/idle)
-🔲 Planimetrie-Bilder in Yodeck hochladen + IMAGE_MEDIA_IDS füllen
-🔲 On-site: Ring-Token generieren und in .env setzen
-🔲 Tests nach Pull verifizieren
-```
+
+Davor kurz prüfen, ob `showSnack` den `kind`-Parameter generisch für Styling
+nutzt (wie bei `kind: "ring"`, [kiosk.js:95](apps/kiosk/public/kiosk.js:95)) —
+falls ja, optional einen passenden visuellen Stil (Farbe/Icon) dafür ergänzen,
+sonst reicht der Text-Snack allein. Kleine, risikoarme Änderung — eine Zeile
+Logik, kein Pipeline-Eingriff.
+
+**Status:** 🔲 offen — Vorschlag steht, Umsetzung ist trivial (~5 Minuten).
+
+### H) Audio-Pipeline-Umbau — ✅ ERLEDIGT (verworfen, 2026-06-07)
+**Geralds Vorgabe:** *„mit dem aktuellen Setup funktioniert die Unterhaltung.
+Überprüfen ob dieser Fix noch notwendig ist."* → *„folge deiner Empfehlung für H"*
+
+**Entscheidung:** Gerald ist meiner Empfehlung gefolgt — **Umbau verworfen**,
+nicht committet. Das committete Setup aus `73764b0` (Pro-Turn-Stream +
+`activateSpeaker()` intern in `doSpeak()`) funktioniert bereits live; die
+Begründung für den riskanteren Umbau entfällt damit.
+
+**Durchgeführt** (Details in Abschnitt 2a):
+- `door-bridge.ts` 1:1 auf `73764b0` zurückgesetzt + `human_fallback`-Branch
+  erneut ergänzt (chirurgischer Revert, kein `git checkout` der ganzen Datei,
+  damit die additive `human_fallback`-Änderung erhalten bleibt)
+- `door-intercom/index.ts` → `activateSpeaker()` zurück auf `private`
+  (die direkte Bridge-Aufruf-Variante war nur für den verworfenen Umbau nötig;
+  `doSpeak()` re-assertet weiterhin intern, [door-intercom/index.ts:239](packages/door-intercom/index.ts:239))
+- `git diff 73764b0` zeigt jetzt nur noch +5 Zeilen (`human_fallback`-Branch) in
+  `door-bridge.ts` und **keinen** Diff mehr in `door-intercom/index.ts`
+- Beide Pakete typecheck clean (`tsc --noEmit` exit 0 für `@nera/door-intercom`
+  und `@nera/orchestrator`)
+
+**Status:** ✅ erledigt — verworfen, Code wieder auf bewährter `73764b0`-Basis +
+additivem `human_fallback`. Damit ist auch der Ausgangspunkt für A/D (beide
+ändern `door-bridge.ts` weiter) jetzt der bewährte, nicht der experimentelle Stand.
 
 ---
 
-## 11. Session Log
+## 8. Match-Analyse: „Unausgereift formulierte Stellen" vs. Geralds Fixes
 
-### [2026-06-07 Pull + Handover-Erstellung] Repo auf aktuellen Stand gebracht
-- `git pull origin main` — 110 Dateien, 8443 Insertions
-- Neues: `packages/door-intercom/`, `packages/ring-client-api/` (vendored), `apps/orchestrator/src/intercom/door-bridge.ts`, `apps/orchestrator/src/agent/convai-ws.ts`, `apps/orchestrator/src/sinks/yodeck.ts`, `assets/planimetry/*.png` (25 Bilder)
-- Alter Handover archiviert unter `log/archive/HANDOVER_CLAUDE_CODE_2026-06-06.md`
-- Neue vollständige Codeanalyse als neuer Handover erstellt
-- Status: ✅ Handover aktuell
+Abgleich der vier zuvor identifizierten Prompt-/Doku-Schwächen gegen die
+Fix-Vorgaben A–H:
 
-### [2026-06-07 03:40] Door-Silence: Diagnose-Testset gebaut + Audio-Pipeline freigesprochen
-- **Neu:** `apps/orchestrator/src/dev/door-diag.ts` (ffmpeg-Return-Audio-Matrix, offline, nutzt dieselbe gebündelte `ffmpeg.exe` wie Prod) + `apps/orchestrator/src/audio/wav.diag.test.ts` (WAV/Amplify-Unit-Diagnose). Run: `corepack pnpm -F @nera/orchestrator exec tsx src/dev/door-diag.ts`
-- **Ergebnis:** Alle 5 ffmpeg-Eingabe-Varianten (Streaming-WAV ±`-re`, Finite-WAV, Raw-PCM, MP3) PASS, exit 0, volle 3,00 s Output. → **Hypothese A (inCall-Timing), B (Streaming-WAV vs. ffmpeg) und Gain-Clipping als Ursache WIDERLEGT.** Audio-Pipeline (PCM→Amplify→WAV→ffmpeg-Encode pcm_mulaw) ist sauber.
-- **Fehler eingegrenzt auf** die einzige offline nicht erreichbare Schicht: WebRTC-Return-Audio (`transcodeReturnAudio` `-f rtp` → `RtpSplitter` → `connection.sendAudioPacket()` → `returnAudioTrack.writeRtp()` → Ring). Code-Kandidat: **`activateCameraSpeaker()` wird im Intercom-Pfad nie aufgerufen.** Beobachtbares Live-Signal: `webrtc-connection.js:68` `console.log("[webrtc] connection state:", …)` geht auf echtes stdout (nicht unterdrückt).
-- Wichtig: ffmpeg-stderr des Return-Pfads ist in Prod hinter `debug('ring')` unterdrückt; `exitCallback`→`onFinished()` feuert bei JEDEM Exit (auch Crash) → `✓ finished speaking` ist KEIN Erfolgsbeweis.
-- **RTP-Output-Probe** (`apps/orchestrator/src/dev/door-diag-rtp.ts`): ffmpeg `-f rtp` → lokaler UDP-Socket, beide Codec-Zweige PASS. pcmu → RTP PT 0 (matcht werift PCMU pt0); opus → PT 97 (werift verhandelt Opus ohne festen PT → ggf. Rewrite nötig). → ffmpeg-Output-Stage (inkl. RTP-Mux) ist sauber. **Stille liegt definitiv im `werift returnAudioTrack.writeRtp → Ring`-Delivery.**
-- **Live-Probe gebaut:** `apps/orchestrator/src/dev/door-diag-live.ts` (typecheckt clean). Bestätigt Team-Hypothese #3 (`camera_connected` feuert beim Intercom nie → `activateCameraSpeaker()`-Gate öffnet nie) UND testet den Fix in EINEM Buzz: loggt alle Ring-Messages + `onCameraConnected`, spielt Ton A (440Hz) VOR und Ton B (880Hz) NACH einer *ungated* `camera_options{stealth_mode:false}`. Ändert KEINEN Prod-Code (nur Beobachtung + 1 Signalling-Message). Persistiert rotierten Token in `.ring-token`.
-  - Run: `$env:DEBUG="ring"; corepack pnpm -F @nera/orchestrator exec tsx src/dev/door-diag-live.ts` → einmal klingeln.
-  - Deutung: nur Ton B hörbar → #3 bestätigt, ungated-Aktivierung = Fix · beide → Lautsprecher ok, Bug ConvAI-pfad-spezifisch · keiner → Aktivierung reicht nicht (Codec/Track tiefer).
-- Status: 🔲 wartet auf Live-Buzz durch Gerald (Hardware vor Ort). Danach: gezielter Prod-Fix je nach Ton-Ergebnis.
+**1. Widerspruch `open_door`-Guardrail (`instructions.md:51`) vs. Tool-Wiring**
+→ ❌ **NICHT gelöst, bewusst zurückgestellt.** Gerald hat das explizit auf
+„nach Erledigung dieser Punkte" verschoben — keine Aktion in diesem Durchgang.
 
-### [2026-06-07 04:10] ROOT CAUSE bestätigt + Fix gesetzt — Tür-Lautsprecher
-- **Live-Buzz-Ergebnis:** nur Ton B (880 Hz, NACH ungated `camera_options{stealth_mode:false}`) war an der Türtafel hörbar, Ton A (440 Hz, davor) stumm. → **Hypothese #3 bestätigt.**
-- **Root Cause:** Der kameralose Ring-Intercom hält den Return-Audio-Lautsprecher zu, bis `camera_options{stealth_mode:false}` gesendet wird. Der Fork-eigene `activateCameraSpeaker()` ist auf das `camera_connected`-Event gated, das ein Intercom **nie** emittiert → No-Op. `transcodeReturnAudio` ruft es ohnehin nie. Ergebnis: jedes `speak()` wird encodiert + per RTP gesendet, aber am Gerät verworfen → stumm. (Audio-Pipeline/ffmpeg/RTP waren laut Offline-Testset alle sauber.)
-- **Fix (Prod):** `packages/door-intercom/index.ts` — neue private `activateSpeaker()` sendet `camera_options{stealth_mode:false}` **ungated, einmal pro Call**, aufgerufen in `openCall()` direkt nach `this.call = call` (früh genug, dass der Kanal vor dem 1. Agent-Audio offen ist). Reicht in private Fork-Internals (`connection.sendSessionMessage`) via Cast, da die öffentliche Fork-API keine ungated Speaker-Kontrolle für den Audio-Intercom hat. `VENDORED.md`-Fork NICHT angefasst. Beide Packages typecheck clean.
-- **Verifikation offen:** 1× Buzz mit `DIAG_OBSERVE_ONLY=1` (Ton A muss jetzt hörbar sein) ODER echter Orchestrator-Lauf (`pnpm dev`) + Buzz → Nera-Greeting ab 1. Turn hörbar.
-- Diagnose-Artefakte (additiv, kein Prod): `src/dev/door-diag.ts`, `src/dev/door-diag-rtp.ts`, `src/dev/door-diag-live.ts`, `src/audio/wav.diag.test.ts`.
-- Status: ✅ Fix gesetzt · 🔲 finale Live-Verifikation durch Gerald
+**2. `notify_host`-Formulierung verspricht eine Aktion, die nicht existiert (`instructions.md:30`/`:83`)**
+→ ❌ **NICHT gelöst — F) klärt nur den Entscheidungsprozess, nicht das Prompt-Risiko.**
+Solange die Rücksprache (F) läuft, bleibt der Agent mit einer Anweisung
+unterwegs, die ihn ein Versprechen machen lässt, das technisch ins Leere läuft
+(„Unknown tool"-Antwort, [door-bridge.ts:177](apps/orchestrator/src/intercom/door-bridge.ts:177)).
+**Mein Lösungsvorschlag (Übergangslösung bis F geklärt ist):** `instructions.md:30`
+von *"say you will notify the host; trigger `notify_host`"* auf einen
+tatsächlich existierenden Pfad umstellen — z. B. *"say you will let the front
+desk know, and call `human_fallback`"* — oder ersatzlos auf eine reine
+verbale Zusicherung ohne Tool-Trigger reduzieren, bis (und falls) `notify_host`
+gebaut wird. Referenz in `:83` entsprechend mitziehen.
 
-### [2026-06-07 04:40] Multi-Turn-Audio-Fix (Speaker re-mutet pro Turn) + offene Phase 2
-- **Live-Befund:** Greeting hörbar ✅, aber Turns 2+ stumm (obwohl `🔊 streaming`/`✓ finished` im Log). → Ring **re-mutet den Lautsprecher nach jeder Äußerung**; einmaliges `camera_options{stealth_mode:false}` in `openCall` reicht nicht.
-- **Fix (Prod):** `packages/door-intercom/index.ts` — `activateSpeaker()` Once-Guard entfernt; wird jetzt **pro Turn** am Anfang von `speak()` re-asserted (zusätzlich weiterhin in `openCall` für Greeting-Vorlauf). Typecheck clean.
-- **Phase 2 offen (Gerald-Wunsch: längere Konversation):** Call endete nach ~29s mit Ring-`camera_rsp_timeout` (code 4) — VOR dem 70s-`activate_session`-Limit. Verdacht: ungated `camera_options` armt serverseitig einen Kamera-Antwort-Watchdog (das war vermutlich der Sinn des `camera_connected`-Gates). Protokoll-Surface des Forks bietet keine Alternativ-Speaker-Message; nur Session-Messages: live_view, ice, ping(5s), activate_session, stream_options, camera_options, close. Nächster Schritt: per Live-Test prüfen, ob der per-Turn-Re-Assert die Dauer verändert → entscheidet, ob `camera_options` der Timeout-Auslöser ist.
-- Status: ✅ Multi-Turn-Fix gesetzt · 🔲 Live-Verifikation (alle Turns hörbar? + Call-Dauer) · 🔲 Phase 2 Timeout
+**3. `TURN_GAP_MS`-Begründung vage/unbelegt ("bridge pauses … ignore background noise")**
+→ 🟡 **Teilweise adressiert — aber nicht direkt, sondern indirekt über D), und das
+muss man sauber auseinanderhalten.** Geralds Spezifikation in D) liefert eine
+klare, belastbare Verhaltensbeschreibung — aber für ein **anderes** Zeitfenster
+(Besucher-Inaktivität nach Mikro-Öffnung), nicht für `TURN_GAP_MS` (Neras
+Sprechpausen-Erkennung). Die ursprüngliche Vagheit rund um `TURN_GAP_MS = 2000`
+bleibt damit bestehen. **Mein Vorschlag:** `TURN_GAP_MS` von der
+Inaktivitäts-Logik strikt trennen (siehe Schritt D.5) und seinen Wert separat
+mit `DOOR_DEBUG=1`-Messdaten belegen oder — pragmatisch für die Demo — auf den
+zuletzt verifizierten Wert (700ms) zurücksetzen, sofern dafür kein dokumentierter
+Grund für die Erhöhung auf 2000ms vorliegt.
 
-### [2026-06-07 05:05] speak()-Serialisierung (Drop bei Back-to-Back-Äußerungen) + Dauer-Update
-- **Live-Befund:** Konversation läuft jetzt lang über viele Turns, **kein `camera_rsp_timeout`** mehr → der per-Turn-Re-Assert hält die Session offenbar auch lebendig (Phase 2 wohl entschärft, Gerald bestätigt noch endgültig). ABER: `speak: Already speaking`-Fehler 2× → bei zwei schnell aufeinanderfolgenden Agent-Äußerungen (typisch um Tool-Calls: „I'll open the door" → `open_door` → „The door is open, come on in!") warf `speak()` und die **zweite Äußerung ging verloren** (stumm).
-- **Fix (Prod):** `packages/door-intercom/index.ts` — `speak()` wirft nicht mehr bei laufender Wiedergabe, sondern **serialisiert** über eine Promise-Queue (`speakQueue`); eigentliche Wiedergabe in neuer `doSpeak()`. Back-to-Back-Äußerungen werden nacheinander abgespielt statt verworfen. `activateSpeaker()` jetzt in `doSpeak` (re-assert direkt vor jeder Wiedergabe). Queue wird pro Call in `openCall` zurückgesetzt. Typecheck clean.
-- **Bekannter Minor-Caveat:** Der bridge-seitige `speaking`-Mute-Flag (`door-bridge.ts`) kann während einer *gequeueten* zweiten Äußerung kurz das Mikro entmuten (Echo-Risiko bei back-to-back). Sekundär, später optional härten.
-- Status: ✅ Audio-Pipeline + Speaker-Open + Multi-Turn + Serialisierung gefixt · 🔲 Gerald: Re-Test (alle Turns inkl. Tool-Call-Follow-up hörbar? Call-Dauer ok?)
+**4. Inkonsistente `human_fallback`-Trigger-Sprache im Prompt ("→ X" vs. "→ trigger X")**
+→ ❌ **NICHT durch A–H adressiert** — keiner der Punkte zielt auf diese Stelle.
+**Mein Lösungsvorschlag:** kleiner, risikoarmer Cleanup-Pass über
+`skills/instructions.md` — durchgehend "→ trigger `human_fallback`" verwenden
+(Zeilen [53](skills/instructions.md:53), [72](skills/instructions.md:72),
+[108](skills/instructions.md:108), [133](skills/instructions.md:133) angleichen).
+Lässt sich am besten zusammen mit den D)-Prompt-Ergänzungen in einem Rutsch
+erledigen, um nicht zweimal in dieselbe Datei zu müssen.
 
-### [2026-06-07 05:25] Half-Duplex-Echo-Fix (Mikro entmutet zu früh bei back-to-back)
-- **Befund (Gerald):** Tür öffnete sofort bei korrektem Namen, danach „führte die Konversation weiter" — Ursache: bei gequeueten Back-to-Back-Äußerungen entmutete der half-duplex-Mute das Türmikro schon nach der *ersten* `speak().finally`, während die zweite (z.B. „come on in!") noch lief → Agent hörte sich selbst.
-- **Fix (Prod):** `apps/orchestrator/src/intercom/door-bridge.ts` — `speaking` Boolean → `speakingCount` Zähler. `++` vor jedem `door.speak()`, `--` im `finally`; `doorState("listening")` + Mikro-Unmute (`onAudioChunk`-Gate `speakingCount===0`) erst wenn ALLE gequeueten Äußerungen fertig. Resets in `startConversation()` + `onCallEnd`. Sync-Throw von `speak()` unkritisch, da Aufruf durch `door?.inCall`-Guard abgesichert. Typecheck clean.
-- **Hinweis:** Falls der Agent *nach* dem Echo-Fix immer noch „zu viel" weiterredet, ist das Agent-Prompt-Verhalten (`skills/instructions.md`), nicht der Audio-Bridge.
-- Status: ✅ alle vier Tür-Audio-Probleme gefixt (Speaker-Open, Multi-Turn, Serialisierung, Echo) · 🔲 Gerald: finaler Re-Test
+---
 
-### [2026-06-07 05:45] Visitor-Antwort nicht erfasst (`visitor: "..."`) — Diagnose-Logging statt Rateversuch
-- **Befund:** Nach einer (langen) Nera-Frage wurde Geralds Antwort nicht erfasst (`visitor: "..."`). Echo-Fix als Ursache **ausgeschlossen**: dieser Run hatte nur Single-Stream-Turns (je 1×`🔊`/`✓`), wo der `speakingCount`-Zähler verhaltensgleich zum alten Boolean ist. Run 2 (vor Echo-Fix) hatte reiche Multi-Turn-Konversation → Mikro funktioniert grundsätzlich.
-- **Verdacht:** half-duplex **Taub-Fenster** — Mikro öffnet erst `TURN_GAP_MS` (700ms) + ffmpeg-Drain nach Neras letztem Chunk (`speakingCount→0`). Schnelle Antwort auf lange Frage fällt in dieses ~1s-Fenster → ConvAI bekommt nur Stille → `"..."`. Inhärent, keine Regression.
-- **Eingebaut:** env-gated Mess-Logging in `door-bridge.ts` (`DOOR_DEBUG=1`, Standardlauf unverändert): pro Listen-Window `captured N chunks`, pro Speak-Window `dropped N chunks while Nera spoke`. Zeigt beim nächsten Buzz, ob das Mikro offen war / Audio zu ConvAI floss. Typecheck clean.
-- **Nächster Schritt je nach Messung:** dropped>0 & captured≈0 beim "..." → Taub-Fenster/Barge-in (Fix: Fenster verkürzen bzw. Barge-in) · captured groß aber "..." → ConvAI-VAD/Transkription (nicht das Mikro).
-- Status: 🔲 Gerald: Re-Test mit `DOOR_DEBUG=1`
+## 9. Toter Code → Archiv-Plan (aktualisiert nach H-Revert)
 
-### [2026-06-07 06:10] ÜBERGABE an neuen Chat — Stand Tür-Audio + offene Konversations-Lifecycle-Themen
+Durch den Revert von H (Abschnitt 2a) hat sich die Lage geändert: Zwei der drei
+ursprünglich gefundenen toten Stellen sind jetzt **wieder aktiver, bewährter
+Code** (Teil des `73764b0`-Standes) — keine Archivierung nötig. Übrig bleibt
+**ein** echter, vom Umbau unabhängiger Archiv-Kandidat:
 
-**Neuer Befund (Konversation loopt nach erledigtem Fall):** Nach `open_door` + `show_destination` (Person gefunden, Tür offen) lief der Call **volle ~119,6 s** und endete erst am **`maxCallMs`-Hard-Cap (120000 ms)** von `DoorIntercom`. → Der alte `camera_rsp_timeout` (~30 s) ist durch den per-Turn-Speaker-Re-Assert **endgültig weg** (Phase 2 gelöst). Das Looping (`visitor: "..."` → Nera „Are you still there?" in Endlosschleife) hat zwei Ursachen, **beide außerhalb der Audio-Pipeline**:
-1. **Kein Konversations-Ende:** Die Bridge ruft nach erledigter Aufgabe nie `door.endCall()` → Call bleibt offen bis 120-s-Cap.
-2. **Agent-Prompt re-engaged auf Stille:** Jedes `visitor: "..."` = ConvAI empfängt echte Stille (Besucher ist nach Türöffnen reingegangen); Nera füllt sie laut Prompt mit „Are you still there?".
-→ `visitor: "..."` hier = **echte Stille**, NICHT das half-duplex Taub-Fenster.
+| Code | Fundort | Status nach Revert | Archiv-Notiz |
+|---|---|---|---|
+| `DEBUG_WAV`-Konstante + `pcmToWav`-Import | [door-bridge.ts:22](apps/orchestrator/src/intercom/door-bridge.ts:22), [:18](apps/orchestrator/src/intercom/door-bridge.ts:18) | ✅ wieder lebendig (Teil von `73764b0`) — **kein Archiv-Kandidat mehr** | — entfällt |
+| `micSent`-Zähler | [door-bridge.ts:61](apps/orchestrator/src/intercom/door-bridge.ts:61) | ✅ wieder lebendig (Teil von `73764b0`) — **kein Archiv-Kandidat mehr** | — entfällt |
+| `this.speaking`-Feld in `DoorIntercom` | [door-intercom/index.ts:66](packages/door-intercom/index.ts:66), Schreibstellen [:171](packages/door-intercom/index.ts:171), [:238](packages/door-intercom/index.ts:238), [:253](packages/door-intercom/index.ts:253), [:263](packages/door-intercom/index.ts:263) | ❌ weiterhin tot — **einziger verbleibender Kandidat** | War schon in `73764b0` tot (unabhängig vom verworfenen Umbau — wird nirgends gelesen, vermutlich Rest aus der Zeit vor `speakQueue`, früher wohl ein Guard wie `if (this.speaking) throw`). Reaktivierung: nur falls man zurück zu einem werfenden statt queuenden `speak()` möchte — dann als Bedingung in `speak()` vor dem Queue-Append wieder nutzen. |
 
-**✅ ABGESCHLOSSEN (Tür-Audio, alle live verifiziert außer wo vermerkt):**
-1. **Lautsprecher öffnet sich** — `packages/door-intercom/index.ts` `activateSpeaker()` sendet `camera_options{stealth_mode:false}` ungated (Fork-`activateCameraSpeaker()` ist auf nie-feuerndes `camera_connected` gated). Root Cause per Live-A/B bestätigt.
-2. **Multi-Turn hörbar** — `activateSpeaker()` wird **pro Turn** in `doSpeak()` re-asserted (Ring re-mutet nach jeder Äußerung).
-3. **Back-to-Back-Drop behoben** — `speak()` serialisiert über `speakQueue`-Promise statt zu werfen (`Already speaking`-Verlust weg); Wiedergabe in neuer `doSpeak()`.
-4. **Echo/Selbst-Trigger behoben** — `door-bridge.ts` half-duplex `speaking` Boolean → `speakingCount` Zähler; Mikro stumm bis ALLE gequeueten Äußerungen fertig.
-5. **Diagnose-Logging** — `door-bridge.ts` `DOOR_DEBUG=1`: pro Turn `captured/dropped chunks` (Standardlauf unverändert).
+**Vorschlag fürs Archiv (nur noch für `this.speaking` relevant):** ein
+Markdown-Archiv unter `packages/door-intercom/_archive/` mit Snippet + Fundort +
+Grund + Reaktivierungs-Hinweis — git-Historie bleibt ohnehin als Fallback
+bestehen, das Archiv ist die schnell auffindbare Referenz für „was war das
+nochmal und warum raus". Lohnt sich für ein einzelnes totes Feld eher als
+schlanke Notiz denn als eigenes Verzeichnis — z. B. ein kurzer Kommentarblock
+direkt im Archiv-File statt eigener Ordnerstruktur.
 
-**🔲 OFFEN für neuen Chat (Priorität für sauberen Demo-Flow):**
-- **A) Konversations-Lifecycle / Call-Ende** (Hauptthema): Nach `open_door` (Aufgabe erledigt) kurze Abschiedszeile, dann `door.endCall()` (z. B. nach kurzem Timeout). UND/ODER **Inaktivitäts-Timeout**: nach X s Stille / N leeren Turns → `endCall()`. Optional `maxCallMs` senken. Ort: `apps/orchestrator/src/intercom/door-bridge.ts` (Tool-Handler `open_door` / Turn-Logik).
-- **B) Agent-Prompt** (`skills/instructions.md`, Skills-Team): Nera soll nach erledigtem Anliegen **abschließen** statt „Are you still there?" zu loopen.
-- **C) Noch unbestätigt:** mittlere-Konversation `visitor: "..."` (Antwort nicht erfasst) — Ursache Taub-Fenster (700 ms `TURN_GAP_MS` + ffmpeg-Drain) vs. ConvAI-VAD. **Mit `DOOR_DEBUG=1` messen** (captured≈0+dropped hoch → Taub-Fenster; captured hoch+"..." → VAD). Möglicher Fix: Mikro am `endTurn` öffnen statt erst nach ffmpeg-Drain (700-ms-Gap behalten).
+---
 
-**Working-Tree-Stand (NICHTS committet):**
-- Geändert (Prod): `packages/door-intercom/index.ts`, `apps/orchestrator/src/intercom/door-bridge.ts`
-- Neu (additiv, Diagnose): `apps/orchestrator/src/dev/door-diag.ts`, `…/door-diag-rtp.ts`, `…/door-diag-live.ts`, `apps/orchestrator/src/audio/wav.diag.test.ts`
-- Vendored Fork (`packages/ring-client-api/`) UNANGETASTET.
-- (Vorbestehend, nicht von dieser Session: Root-`HANDOVER_CLAUDE_CODE.md`-Deletion, `log/archive/`, `log/test-welcome-timeout-2026-06-07.md`.)
+## 10. Empfohlene Abarbeitungsreihenfolge
 
-**Run/Verify:**
-- Voller Lauf: `$env:DEBUG="ring"; $env:DOOR_DEBUG="1"; corepack pnpm dev` (in `apps/orchestrator`) — `pnpm` nur via `corepack` (nicht im PATH); Node v22 aktiv (Projekt will ≥24, läuft aber).
-- Offline-Testset: `corepack pnpm -F @nera/orchestrator exec tsx src/dev/door-diag.ts` (+ `door-diag-rtp.ts`); Unit: `… exec vitest run src/audio/wav.diag.test.ts`.
-- Typecheck: `corepack pnpm -F @nera/door-intercom exec tsc --noEmit` und `… -F @nera/orchestrator …` — beide aktuell clean.
+1. ~~H zuerst entscheiden~~ → ✅ **erledigt** (verworfen, Abschnitt 2a/7 — Basis
+   ist jetzt wieder der bewährte `73764b0`-Stand + `human_fallback`).
+2. ~~Dead-Code-Archivierung~~ → auf **einen** Kandidaten geschrumpft
+   (`this.speaking`, Abschnitt 9) — kann bei Gelegenheit erledigt werden, ist
+   aber nicht mehr blockierend für irgendetwas anderes.
+3. **G** (Kiosk-UI-Fix) — trivial, unabhängig, kann jederzeit zwischengeschoben werden.
+4. **A + D zusammen umsetzen** — beide ändern `door-bridge.ts` substanziell
+   (Call-Ende-Logik, Inaktivitäts-Timer, neue Prompt-Passagen) und hängen
+   thematisch zusammen (beide enden in `door.endCall()` + Abschiedszeile).
+   C löst sich dabei automatisch mit. **Ausgangsbasis ist jetzt der bewährte
+   Code — geringeres Risiko als noch vor dem H-Revert.**
+5. **B** (Display-Hold) — baut auf dem Call-Ende-Mechanismus aus A auf.
+6. **Match-Analyse-Fixes** (Abschnitt 8, Punkte 2–4) — Prompt-Cleanup in
+   `instructions.md`, am besten in einem Rutsch mit den D)-Prompt-Ergänzungen.
+7. **F** — keine Code-Aktion, nur Rücksprache anstoßen (kann parallel zu allem
+   anderen laufen).
+8. **E** — nur beobachten, kein eigener Schritt.
+9. **Architektur-Frage `open_door`** (Match-Analyse Punkt 1) — erst danach,
+   wie von Gerald vorgegeben.
 
-**Noch zu entscheiden (Gerald):** Diagnose-Skripte + Fixes committen? (bisher nichts committet)
-- Status: 🔲 neuer Chat: A) Call-Ende-Lifecycle, B) Agent-Prompt, C) `DOOR_DEBUG`-Messung Taub-Fenster
+**Nächster sinnvoller Schritt für die neue Debugging-Session:** direkt mit **G**
+(triviale UI-Ergänzung) oder **A+D** (Kernstück der Demo-Reife) starten — beide
+Wege sind jetzt ohne den Umbau-Unsicherheitsfaktor begehbar.
 
-### [2026-06-07 06:35] AUFGABE für neuen Chat: Gespräch beenden + Location auf Yodeck halten
+---
 
-**Entscheidung (Gerald):** Konversations-Ende = **„Call nach `open_door` beenden + Location halten"**. D.h. wenn der Fall erledigt ist (Person gefunden + Tür auf), soll Nera kurz abschließen, der Ring-Call enden — ABER die Location muss **auf dem Yodeck-Screen sichtbar bleiben** (nicht sofort idle).
+## 11. Session-Log
 
-**Kernproblem (am Code verifiziert):**
-- Location erscheint via `broker.broadcastDestination()` → WS-„display"-Clients. Yodeck ist laut ARCHITECTURE §4.7 ein **Web-Page-Player auf die Live-Display-URL** (kein per-Visitor-API-Push; `YodeckSink`/`yodeck-images.ts` ist out-of-band + leer).
-- `door-bridge.ts:205` (`onCallEnd`) ruft `broker.broadcastIdle()` → **leert den Screen sofort**. Wenn man den Call nach `open_door` beendet, verschwindet damit die Location. ⇒ Anzeige muss vom Call-Ende **entkoppelt** werden.
-- Das „Are you still there?"-Loopen ist Agent-Verhalten (re-prompt auf echte Stille); Call lief bisher bis `maxCallMs` (120 s).
+### [2026-06-07 ~10:15] Handover neu erstellt (Datei war versehentlich gelöscht)
+- Alte Handover-Datei (`log/HANDOVER_CLAUDE_CODE.md`) wurde von Gerald
+  versehentlich gelöscht; Originaltext aus `git show 73764b0:log/HANDOVER_CLAUDE_CODE.md`
+  rekonstruierbar (vollständige Session-Logs zur Tür-Audio-Diagnose bleiben dort
+  in der Git-Historie erhalten).
+- Diese Datei fasst den AKTUELLEN Working-Tree-Stand zusammen (uncommitted
+  Audio-Pipeline-Umbau + neuer `human_fallback`-Skill), da der Lead Developer
+  heute kurzfristig ausgestiegen ist und Gerald den Code direkt übernimmt.
+- Beide Pakete typecheck clean (`@nera/door-intercom`, `@nera/orchestrator`).
+- **Wichtigste Erkenntnis für Gerald:** Der aktuelle Working-Tree-Stand enthält
+  einen NICHT verifizierten Architekturwechsel der Türlautsprecher-Pipeline
+  (durchgehender Stream + Silence-Padding + `TURN_GAP_MS` 700→2000ms). Vor dem
+  nächsten Live-Test einmal bewusst gegenhören, ob das eine Verbesserung oder
+  eine Verschlechterung ist — ggf. mit `git diff` / `git stash` vergleichbar
+  machen.
+- Status: ✅ Handover aktuell · 🔲 Gerald: Working-Tree-Audio-Umbau live verifizieren, dann A/B/C/D (Abschnitt 4) angehen
 
-**Umsetzungsskizze (neuer Chat):**
-1. In `door-bridge.ts` `open_door`-Tool-Handler (nach erfolgreichem `door.unlock()`): Aufgabe-erledigt-Flag setzen + **graceful end** planen — nach kurzer Verzögerung (Nera ihre Abschiedszeile sprechen lassen) `door.endCall()`.
-2. **Display-Idle vom Call-Ende entkoppeln:** `onCallEnd` nicht sofort `broadcastIdle()`; wenn diese Session eine Destination gezeigt hat, Location **X s halten** (z.B. `DISPLAY_HOLD_MS` ~60 s) und ERST DANN idlen. (Letzte Destination + „shownThisCall" tracken.)
-3. Optional B) `skills/instructions.md` (Skills-Team): Nera nach erledigtem Anliegen abschließen lassen statt loopen.
+### [2026-06-07 ~11:30] Action-Plan aus `assets/offene fixes.xlsx` eingearbeitet
+- Gerald hat die offenen Punkte (vorige Session, Abschnitt 4) priorisiert/präzisiert
+  als Excel zurückgegeben — jetzt verbindliche Zielbeschreibung, eingearbeitet in
+  neue Abschnitte 7–10 (Action-Plan A–H, Match-Analyse gegen die vier
+  Prompt-Schwächen, Dead-Code-Archiv-Plan, empfohlene Reihenfolge).
+- **Wichtigste neue Erkenntnisse:**
+  - **A**: Vor `open_door` soll Nera aktiv nachfragen ("sonst noch was?"), erst
+    bei Verneinung Tür öffnen + Call beenden — das ist mehr als nur ein
+    `endCall()`-Hinterherschieben, braucht eine Prompt-Ergänzung.
+  - **D** ersetzt die reine `TURN_GAP_MS`-Frage durch eine präzise
+    Inaktivitäts-Spezifikation (2–10s tolerieren, >10s nachfragen, danach
+    Abschied + Ende) — **auf einer anderen Zeitachse** als `TURN_GAP_MS`
+    (Besucher-Stille nach Mikro-Öffnung vs. Neras Sprechpausen-Erkennung).
+    Beide nicht vermischen — sonst werden künftige `DOOR_DEBUG`-Messungen
+    uninterpretierbar.
+  - **H**: Gerald bestätigt, dass die Konversation mit dem AKTUELLEN (uncommitted)
+    Setup bereits funktioniert — meine Empfehlung ist trotzdem, den riskanteren
+    Umbau zu verwerfen und auf der bewährten `73764b0`-Basis weiterzuarbeiten,
+    weil A/D ohnehin tiefe Eingriffe in dieselbe Datei brauchen.
+- Match-Analyse-Ergebnis: von 4 identifizierten Prompt-Schwächen wird durch A–H
+  **keine vollständig automatisch gelöst** — #1 ist bewusst zurückgestellt
+  (Gerald), #2–#4 brauchen jeweils einen eigenen kleinen Cleanup-Schritt
+  (Lösungsvorschläge in Abschnitt 8 exakt formuliert).
+- Status: 🔲 Gerald: Reihenfolge aus Abschnitt 10 abarbeiten, beginnend mit der
+  H-Entscheidung (Umbau verwerfen?) als Weichenstellung für alles Weitere
 
-**OFFENE YODECK-AUFGABE (Gerald hat es noch NICHT geprüft — Fokus lag bisher auf Audio):**
-- **Frage/To-do:** Ist der Yodeck-Screen überhaupt schon als Web-Page-Player auf die Live-Display-URL eingerichtet? (Laut früherem Handover-Punkt war dieses One-time-Setup noch offen.) Falls nein, zeigt der TV die Location noch gar nicht — dann entweder (a) Dashboard-Setup (out-of-band) ODER (b) `YodeckSink`-Push verdrahten (braucht Bilder-Upload + media-ids in `yodeck-images.ts`).
-- **Wie testen (Gerald fragte: „kannst du dich mit meinem TV-Screen verbinden?"):** Direkter Zugriff auf den physischen TV/Yodeck-Player ist NICHT möglich (eigenständiges Remote-Gerät). Stattdessen:
-  1. **Display-URL im Browser** öffnen = exakt was der Yodeck-Web-Page-Player rendert → Destination triggern, prüfen ob sie erscheint (Claude kann das via Chrome-MCP selbst verifizieren). Welche Route/URL die „display"-Seite ist, im neuen Chat aus `apps/orchestrator/src/index.ts` (servt `apps/kiosk/public`) + `apps/kiosk` bestimmen.
-  2. **Yodeck-REST-API** mit Token aus `.env`: `corepack pnpm -F @nera/orchestrator exec tsx src/dev/yodeck-push.ts screens` (Screens + Status) / `… yodeck-push.ts list` (Bilder/media-ids).
-  3. Physischer TV: einmaliges Yodeck-Dashboard-Setup (Screen → Web-Page-Player → Display-URL), dann visuell prüfen.
-- Status: 🔲 neuer Chat: (1) Yodeck-Ist-Stand prüfen (API + Display-URL im Browser), (2) Gespräch-Ende nach `open_door` + Location-Hold implementieren, (3) ggf. Agent-Prompt-Abschluss
+### [2026-06-07 ~12:00] H-Revert durchgeführt — Audio-Pipeline-Umbau verworfen
+- Gerald ist meiner Empfehlung zu H gefolgt: der unkommittete
+  Audio-Pipeline-Umbau (durchgehender Stream + Silence-Padding + `TURN_GAP_MS`
+  700→2000ms) wurde **chirurgisch zurückgesetzt** — `door-bridge.ts` 1:1 auf
+  `73764b0` zurück, dann der additive `human_fallback`-Branch (5 Zeilen) erneut
+  ergänzt; `door-intercom/index.ts` → `activateSpeaker()` zurück auf `private`.
+- Verifiziert: `git diff 73764b0 -- door-bridge.ts` zeigt nur noch +5 Zeilen
+  (`human_fallback`); `door-intercom/index.ts` hat **keinen** Diff mehr zu
+  `73764b0`. Beide Pakete typecheck clean (`tsc --noEmit` exit 0).
+- Entscheidung + Durchführung in Abschnitt 2a, 7 (Punkt H) und 9 (Dead-Code-Plan,
+  jetzt nur noch `this.speaking` als Kandidat) dokumentiert; Reihenfolge in
+  Abschnitt 10 entsprechend aktualisiert.
+- Neuer Abschnitt 5 „Logging fürs Debugging" ergänzt — Übersicht über
+  `DEBUG=ring`, `DOOR_DEBUG=1`, `DEBUG_WAV`-Dump und die Offline-/Live-
+  Diagnose-Skripte, als Startpunkt für die nächste Debugging-Session.
+- Status: ✅ H erledigt (verworfen) · 🔲 Gerald: neue Chat-Session für
+  Live-Debugging starten — Empfehlung: mit `$env:DEBUG="ring";
+  $env:DOOR_DEBUG="1"; corepack pnpm dev` direkt mit voller Logging-Sicht
+  beginnen, dann G oder A+D als nächste inhaltliche Schritte (Abschnitt 10)

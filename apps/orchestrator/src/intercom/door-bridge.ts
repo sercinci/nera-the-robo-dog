@@ -159,6 +159,11 @@ export function startDoorBridge(args: {
                   : "No match — direct them to the front desk.",
             );
           }
+          if (name === "human_fallback") {
+            log.info("[door] human_fallback triggered");
+            broker.doorState("fallback");
+            return respond("Let me get someone from the team to help you — just one moment!");
+          }
           return respond("Unknown tool", true);
         },
         onError: (e) => log.error("[door] agent error:", e.message),
