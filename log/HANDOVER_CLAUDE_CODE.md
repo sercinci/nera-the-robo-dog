@@ -7,6 +7,31 @@ gelöscht wurde — Inhalt aus Working-Tree + Git-Historie rekonstruiert)
 
 ---
 
+## 0. AKTUELLSTES UPDATE (2026-06-07 ~14:30) — Branch `robo-dog-fix_remaining-bugs`
+
+Gerald hat einen Live-Mitschnitt geschickt: Der Inaktivitäts-Mechanismus aus D
+(committet auf `robo-dog-fix_Version_Gerald` als `de3df6a`) hat **live versagt** —
+der Call lief 86 Sekunden und endete am Ende durch Rings eigenen
+`camera_rsp_timeout`, nicht durch unsere Logik. Root Cause gefunden + behoben,
+Details siehe Abschnitt 11, Eintrag „Inaktivitäts-Watchdog redesignt (Live-Bug-Fix)".
+
+**Kurzfassung des Fehlers:** Mein erster `armInactivityTimer()`-Ansatz war an
+`speakingCount === 0` (Mikro offen) gekoppelt UND wurde bei JEDEM
+`onUserTranscript`-Event neu bewaffnet — auch bei den Filler-Transkripten `"..."`,
+die ElevenLabs bei Stille sendet. Da der Agent selbst (sein eigenes,
+unkontrollierbares Loop-Verhalten — DAS war Geralds ursprüngliches Bug-Reported)
+ständig von sich aus „Are you still there?" sagte, wurde unser Timer bei jedem
+dieser Turns + jedem Filler-Transkript zurückgesetzt → er kam nie zum Auslösen.
+**Fix:** ein einziger ABSOLUTER Stille-Timer, der NUR durch echte
+Besucher-Sprache (gefiltert, keine `"..."`-Filler) zurückgesetzt wird — komplett
+entkoppelt von Neras eigener Sprechfrequenz. Siehe `armSilenceTimer()`
+([door-bridge.ts:75-99](apps/orchestrator/src/intercom/door-bridge.ts:75)).
+
+**🔲 Weiterhin offen:** Live-Verifikation des NEUEN Mechanismus steht noch aus —
+das war bislang nur Code-Review + Typecheck, kein erneuter Live-Test.
+
+---
+
 ## 1. Wo wir stehen (Kurzfassung)
 
 **Update 2026-06-07 ~13:30:** Der in Abschnitt 2 beschriebene Working-Tree-Stand
@@ -685,3 +710,66 @@ noch aus** (insbesondere D, siehe Warnung dort).
   (Abschluss-Frage → `open_door` → automatisches Call-Ende), dann optional B
   (Display-Hold über 100s beobachten). Match-Analyse-Fixes (Abschnitt 8, Punkte 2–4)
   und Dead-Code (`this.speaking`) bleiben offen für eine spätere Runde.
+
+### [2026-06-07 ~14:30] Inaktivitäts-Watchdog redesignt (Live-Bug-Fix, Branch `robo-dog-fix_remaining-bugs`)
+
+Gerald hat einen Live-Mitschnitt des committeten D-Stands (`de3df6a`) geschickt —
+**der Mechanismus hat live versagt.** Der Call lief 86 Sekunden, Nera sagte
+mindestens 5x „Wouf! Are you still there?" (mal von sich aus, einmal durch
+unseren injizierten `[SYSTEM_CUE: visitor_silent]`), und der Call endete am
+Ende durch Rings eigenen `camera_rsp_timeout` — NICHT durch unsere Logik.
+
+**Root Cause (per Log-Analyse gefunden):**
+1. Mein `armInactivityTimer()` war an `speakingCount === 0` (Mikro offen)
+   gekoppelt — bei jedem Turn (egal ob Visitor- oder Nera-initiiert) wurde er
+   gestoppt und beim Wieder-Öffnen neu gestartet.
+2. `onUserTranscript` hat den Timer bei JEDEM Transkript neu bewaffnet —
+   **auch** bei den Filler-Transkripten `"..."`, die ElevenLabs offenbar bei
+   erkannter Stille/Hintergrundrauschen sendet (im Log mehrfach sichtbar als
+   `[door] visitor: "..."`). Das verstößt gegen Geralds eigene Spezifikation
+   („Es soll ausschließlich natürliche Sprache erkannt/angenommen werden").
+3. Der Agent selbst läuft mit einem EIGENEN, plattformseitigen
+   Stille-Verhalten — DAS war Geralds ursprünglich gemeldeter Bug („Nera loopt
+   mit Are you still there"). Dieses Verhalten ist von uns aus nicht
+   abschaltbar (kein dokumentierter Client→Server-Mechanismus dafür) und
+   feuert offenbar in kürzeren Abständen als unsere `INACTIVITY_PROMPT_MS`
+   (10s) — jede dieser Äußerungen + jedes folgende `"..."`-Transkript hat
+   unseren Timer zurückgesetzt, bevor er je auslösen konnte. Zwei
+   unkoordinierte Loops liefen parallel, unserer hat nie gewonnen.
+
+**Fix — kompletter Redesign zu einer einzigen ABSOLUTEN Stille-Uhr:**
+- `armSilenceTimer()`/`clearSilenceTimer()` ([door-bridge.ts:75-99](apps/orchestrator/src/intercom/door-bridge.ts:75))
+  ersetzen `armInactivityTimer()`/`clearInactivityTimer()`. Der neue Timer misst
+  die Zeit seit der LETZTEN ECHTEN Besucher-Äußerung — nicht seit dem letzten
+  Mikro-Öffnen. Neras eigene Turns (inkl. ihres nativen Loops) fassen ihn nicht
+  mehr an — siehe Doc-Kommentar im Code, der das explizit begründet.
+- Gestartet wird er genau einmal, beim ERSTEN Mikro-Öffnen (`silenceTimerArmed`-Flag,
+  [:178-184](apps/orchestrator/src/intercom/door-bridge.ts:178)) — danach ausschließlich
+  durch `onUserTranscript` zurückgesetzt, UND NUR wenn der Text echte Sprache enthält
+  (`REAL_SPEECH_RE = /[\p{L}\p{N}]/u`, [:38](apps/orchestrator/src/intercom/door-bridge.ts:38))
+  — Filler wie `"..."` wird jetzt korrekt ignoriert, weder Reset noch
+  „Engagement"-Signal.
+- `stillThereCount`/`STILL_THERE_CAP` (Zähler) → `checkedInOnce` (Flag) — das ist
+  funktional dasselbe „ask once"-Cap aus der Spec, aber als einfacher Boolean
+  unmissverständlicher: entweder wurde schon einmal nachgefragt oder nicht.
+  Wird bei echter Besucher-Sprache zurückgesetzt (frische Erlaubnis für eine
+  künftige Stille-Episode im selben Call).
+- `clearInactivityTimer()`-Aufrufe in `onAgentAudio` (Mikro schließt) entfernt —
+  bewusst, da die neue Uhr von Neras Sprechrhythmus komplett entkoppelt sein muss.
+
+**Ergebnis:** Die neue Uhr kann von Neras eigenem Loop nicht mehr „überholt" oder
+zurückgesetzt werden — sie tickt unabhängig weiter, bis entweder echte
+Besucher-Sprache reinkommt oder zwei volle `INACTIVITY_PROMPT_MS`-Fenster
+(Check-in, dann Abschied) ohne Antwort verstreichen.
+
+**Bitte beim nächsten Live-Test besonders beobachten:** ob der Call jetzt
+zuverlässig nach ca. 2×10s echter Stille mit der Abschiedszeile *„Thanks for
+stopping by — see you next time!"* endet — unabhängig davon, wie oft Nera
+selbst zwischendurch proaktiv nachfragt. Logs dazu: `[door] visitor silent —
+checking in...` und `[door] visitor silent after check-in — saying goodbye...`.
+
+- Beide Pakete weiterhin typecheck clean (`tsc --noEmit` exit 0).
+- Status: ✅ Redesign implementiert (Code-Review + Typecheck) · 🔲 Gerald:
+  **erneuter Live-Test zwingend** bevor D als „done" gilt — der erste Versuch
+  ist live durchgefallen, also nicht blind vertrauen, auch wenn die Logik jetzt
+  sauberer aussieht.

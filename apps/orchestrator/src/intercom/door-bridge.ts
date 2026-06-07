@@ -34,8 +34,8 @@ const TURN_GAP_MS = 700; // silence after the last agent chunk => end of a spoke
 const DOOR_GAIN = 3; // amplify Nera for the quiet intercom speaker (matches the working mp3 volume=3.0)
 const DOOR_DEBUG = process.env.DOOR_DEBUG === "1"; // verbose mic mute/capture diagnostics
 const DISPLAY_HOLD_MS = 100_000; // keep the last destination on screen this long after the call ends
-const INACTIVITY_PROMPT_MS = 10_000; // visitor silence (mic open) before Nera checks in once
-const STILL_THERE_CAP = 1; // at most one "are you still there?" check-in per call
+const INACTIVITY_PROMPT_MS = 10_000; // visitor silence (real speech) before Nera checks in once, then again before goodbye
+const REAL_SPEECH_RE = /[\p{L}\p{N}]/u; // filters out filler transcripts like "..." (no letters/digits = not natural language)
 
 export function startDoorBridge(args: {
   cfg: Config;
@@ -64,26 +64,31 @@ export function startDoorBridge(args: {
   let pendingEndCall = false; // end the call once Nera finishes the utterance in flight
   let shownThisCall = false; // a destination was shown on screen during this call
   let displayHoldTimer: ReturnType<typeof setTimeout> | undefined; // delays broadcastIdle() after call end
-  let inactivityTimer: ReturnType<typeof setTimeout> | undefined; // visitor-silence watchdog (mic open)
-  let stillThereCount = 0; // "are you still there?" check-ins sent this call (capped at STILL_THERE_CAP)
+  let silenceTimer: ReturnType<typeof setTimeout> | undefined; // absolute visitor-silence clock
+  let silenceTimerArmed = false; // starts once, on the first mic-open; from then on only real visitor speech resets it
+  let checkedInOnce = false; // "are you still there?" asked once already (the spec's hard cap)
 
-  function clearInactivityTimer() {
-    if (inactivityTimer) clearTimeout(inactivityTimer);
-    inactivityTimer = undefined;
+  function clearSilenceTimer() {
+    if (silenceTimer) clearTimeout(silenceTimer);
+    silenceTimer = undefined;
   }
 
-  // Runs while the door mic is open. Tolerates normal thinking pauses; after
-  // INACTIVITY_PROMPT_MS of visitor silence, checks in once, then says goodbye
-  // and ends the call if there's still no response.
-  function armInactivityTimer() {
-    clearInactivityTimer();
-    inactivityTimer = setTimeout(() => {
-      inactivityTimer = undefined;
-      if (stillThereCount < STILL_THERE_CAP) {
-        stillThereCount++;
+  // Absolute clock on visitor silence — measures time since the visitor's last
+  // REAL utterance (not since the mic last opened/closed). This is deliberate:
+  // Nera's own turns (including her native "are you still there?" looping) must
+  // NOT reset it, otherwise her chatter masks true visitor inactivity forever.
+  // Tolerates normal thinking pauses; after INACTIVITY_PROMPT_MS of true visitor
+  // silence, checks in once, then says goodbye and ends the call if still no reply.
+  function armSilenceTimer() {
+    clearSilenceTimer();
+    silenceTimer = setTimeout(() => {
+      silenceTimer = undefined;
+      if (pendingEndCall) return;
+      if (!checkedInOnce) {
+        checkedInOnce = true;
         log.info("[door] visitor silent — checking in ('are you still there?')");
         convai?.sendUserMessage("[SYSTEM_CUE: visitor_silent]");
-        armInactivityTimer(); // give them another window to answer the check-in
+        armSilenceTimer(); // give them a window to answer the check-in
       } else {
         log.info("[door] visitor silent after check-in — saying goodbye and ending the call");
         pendingEndCall = true;
@@ -116,8 +121,9 @@ export function startDoorBridge(args: {
     turnChunks = [];
     speakingCount = 0;
     pendingEndCall = false;
-    stillThereCount = 0;
-    clearInactivityTimer();
+    checkedInOnce = false;
+    silenceTimerArmed = false;
+    clearSilenceTimer();
     shownThisCall = false;
     if (displayHoldTimer) {
       clearTimeout(displayHoldTimer);
@@ -133,7 +139,13 @@ export function startDoorBridge(args: {
         },
         onUserTranscript: (t) => {
           log.info(`[door] visitor: "${t}"`);
-          armInactivityTimer(); // visitor responded — restart the silence watchdog
+          // ElevenLabs also emits filler transcripts like "..." for silence/noise —
+          // per spec only natural language counts as a reply; filler must NOT
+          // reset the clock (that's exactly what let the visitor drift past unnoticed).
+          if (REAL_SPEECH_RE.test(t)) {
+            checkedInOnce = false; // genuine engagement — fresh allowance for a future silence episode
+            armSilenceTimer();
+          }
         },
         onAgentAudio: (pcm) => {
           broker.agentAudio(pcm); // browser at normal level
@@ -142,7 +154,6 @@ export function startDoorBridge(args: {
           // Start a live WAV stream to the door on the first chunk of a turn.
           if (!speakStream && door?.inCall) {
             log.info("[door] 🔊 streaming Nera to the door…");
-            clearInactivityTimer(); // mic is closing — stop counting visitor silence
             speakStream = new PassThrough();
             speakStream.write(wavHeader(SAMPLE_RATE, WAV_STREAM_DATA_SIZE)); // streaming header
             speakingCount++; // keep the door mic muted until every queued utterance finishes
@@ -162,7 +173,14 @@ export function startDoorBridge(args: {
                     door?.endCall();
                   } else {
                     broker.doorState("listening");
-                    armInactivityTimer(); // mic reopened — start counting visitor silence
+                    // Start the absolute silence clock once, the first time the
+                    // mic opens (i.e. once the visitor is expected to respond).
+                    // From here on ONLY onUserTranscript (real speech) resets it —
+                    // Nera's own turns must not, see armSilenceTimer's doc comment.
+                    if (!silenceTimerArmed) {
+                      silenceTimerArmed = true;
+                      armSilenceTimer();
+                    }
                     if (DOOR_DEBUG) {
                       log.info(`[door][dbg] 🎤 OPEN — dropped ${micDropped} chunks while Nera spoke`);
                       micDropped = 0;
@@ -192,7 +210,7 @@ export function startDoorBridge(args: {
               await door.unlock();
               log.info("[door] 🔓 intercom unlocked (agent open_door)");
               broker.doorState("unlocked");
-              clearInactivityTimer(); // task done — stop watching for visitor silence
+              clearSilenceTimer(); // task done — stop watching for visitor silence
               pendingEndCall = true; // end the call once Nera finishes the line below
               return respond("The door is open — come on in! Thanks for stopping by — see you next time!");
             } catch (e) {
@@ -257,7 +275,7 @@ export function startDoorBridge(args: {
       convai = null;
       if (turnTimer) clearTimeout(turnTimer);
       turnTimer = undefined;
-      clearInactivityTimer();
+      clearSilenceTimer();
       pendingEndCall = false;
       if (speakStream) {
         speakStream.end();
