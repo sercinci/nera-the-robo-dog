@@ -10,5 +10,6 @@ import { findPerson } from "./find-person.js";
 import { findPlace } from "./find-place.js";
 import { checkAppointment } from "./check-appointment.js";
 import { navigateFloor } from "./navigate-floor.js";
+import { humanFallback } from "./human-fallback.js";
 
-export const skills = [findPerson, findPlace, checkAppointment, navigateFloor];
+export const skills = [findPerson, findPlace, checkAppointment, navigateFloor, humanFallback];

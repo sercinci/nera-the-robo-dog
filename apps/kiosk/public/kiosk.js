@@ -182,6 +182,11 @@ const sessionCommon = () => ({
       const r = await unlockViaServer();
       return r.result || "Done.";
     },
+    human_fallback: async () => {
+      els.status.textContent = "Calling human assistance…";
+      showSnack("Calling a staff member…");
+      return "Let me get someone from the team to help you — just one moment!";
+    },
   },
   onConnect: () => {
     els.phase.textContent = "LIVE";
