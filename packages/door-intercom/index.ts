@@ -162,6 +162,8 @@ export class DoorIntercom {
         fireStart();
       }
 
+      call.activateCameraSpeaker();
+
       // Stream the visitor's audio continuously as mono PCM s16le.
       await call.startTranscoding({
         video: false,
