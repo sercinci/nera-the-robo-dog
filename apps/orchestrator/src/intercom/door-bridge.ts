@@ -37,6 +37,24 @@ const DISPLAY_HOLD_MS = 100_000; // keep the last destination on screen this lon
 const INACTIVITY_PROMPT_MS = 10_000; // visitor silence (real speech) before Nera checks in once, then again before goodbye
 const REAL_SPEECH_RE = /[\p{L}\p{N}]/u; // filters out filler transcripts like "..." (no letters/digits = not natural language)
 
+// Injected via ConvaiSession.sendUserMessage() — ElevenLabs treats this exactly
+// like a visitor utterance and (per their docs) INTERRUPTS Nera if she's mid-turn,
+// which tears down the live door-audio stream. Only ever send these while
+// speakingCount === 0 (see armSilenceTimer). The instruction is spelled out
+// in full rather than coded ("[SYSTEM_CUE: visitor_silent_final]" etc.) because
+// live testing showed the agent doesn't reliably map a short code back to the
+// right behaviour from the system prompt under conversation pressure — an
+// inline, self-contained instruction is far more likely to be followed exactly.
+const SILENCE_CHECK_IN_CUE =
+  "[SYSTEM NOTE — not something the visitor said, never read this aloud: " +
+  "they have gone quiet for a while. Check in once, warmly, in your own words " +
+  "— ask if they are still there.]";
+const SILENCE_GOODBYE_CUE =
+  "[SYSTEM NOTE — not something the visitor said, never read this aloud: " +
+  "they are still not responding. Say your closing line now, exactly: " +
+  '"Thanks for stopping by — see you next time!" Then stop talking — the call ' +
+  "ends automatically right after.]";
+
 export function startDoorBridge(args: {
   cfg: Config;
   data: BuildingData;
@@ -84,15 +102,24 @@ export function startDoorBridge(args: {
     silenceTimer = setTimeout(() => {
       silenceTimer = undefined;
       if (pendingEndCall) return;
+      if (speakingCount > 0) {
+        // Nera is mid-turn. sendUserMessage() is treated like a visitor
+        // utterance and INTERRUPTS her if she's speaking — which tears down
+        // the live door-audio stream (the exact "conversation cuts off but
+        // the terminal keeps scrolling" symptom from the live test). Never
+        // inject while the mic is muted; just recheck once she's done.
+        armSilenceTimer();
+        return;
+      }
       if (!checkedInOnce) {
         checkedInOnce = true;
         log.info("[door] visitor silent — checking in ('are you still there?')");
-        convai?.sendUserMessage("[SYSTEM_CUE: visitor_silent]");
+        convai?.sendUserMessage(SILENCE_CHECK_IN_CUE);
         armSilenceTimer(); // give them a window to answer the check-in
       } else {
         log.info("[door] visitor silent after check-in — saying goodbye and ending the call");
         pendingEndCall = true;
-        convai?.sendUserMessage("[SYSTEM_CUE: visitor_silent_final]");
+        convai?.sendUserMessage(SILENCE_GOODBYE_CUE);
       }
     }, INACTIVITY_PROMPT_MS);
   }
