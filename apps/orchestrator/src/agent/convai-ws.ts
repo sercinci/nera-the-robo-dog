@@ -9,6 +9,7 @@
  *         { user_audio_chunk: "<base64 pcm16k>" }
  *         { type:"pong", event_id }
  *         { type:"client_tool_result", tool_call_id, result, is_error }
+ *         { type:"user_message", text }   // injects text as if the visitor said it
  *   in    conversation_initiation_metadata | audio (audio_event.audio_base_64) |
  *         agent_response | user_transcript | ping (ping_event) | client_tool_call |
  *         interruption
@@ -126,6 +127,11 @@ export class ConvaiSession {
   /** Feed a chunk of the visitor's audio (PCM s16le at the agent's input rate). */
   sendAudio(pcm: Buffer): void {
     this.raw(JSON.stringify({ user_audio_chunk: pcm.toString("base64") }));
+  }
+
+  /** Inject a text message as if the visitor said it — triggers the agent's turn. */
+  sendUserMessage(text: string): void {
+    this.send({ type: "user_message", text });
   }
 
   close(): void {

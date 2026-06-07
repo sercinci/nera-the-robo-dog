@@ -7,12 +7,56 @@ gelöscht wurde — Inhalt aus Working-Tree + Git-Historie rekonstruiert)
 
 ---
 
+## 0. AKTUELLSTES UPDATE (2026-06-07 ~15:30) — Branch `robo-dog-fix_remaining-bugs`
+
+**ZWEITER Live-Test-Durchgang, ZWEITER Fund — diesmal ein ernster:** der
+Silence-Watchdog-Redesign aus dem ersten Fix-Versuch (`f24e295`) hat live einen
+**Audio-Abriss mitten im Gespräch** verursacht — die Tür-Lautsprecher-Ausgabe
+bricht ab, während das Terminal-Log normal weiterläuft, als wäre nichts. Root
+Cause gefunden + behoben (zweiter Commit auf dieser Branch). Details + Log-Beweise
+siehe Abschnitt 11, Eintrag „Audio-Abriss durch sendUserMessage()-Interrupt behoben".
+
+**Kurzfassung:** `convai.sendUserMessage()` wird von ElevenLabs wie eine
+Besucher-Aussage behandelt — **inklusive Interrupt-Verhalten**: wenn Nera gerade
+spricht, wird ihr aktueller Turn sofort abgebrochen (dokumentiertes
+ElevenLabs-Verhalten). Mein `armSilenceTimer()` lief absichtlich unabhängig von
+Neras Sprechrhythmus (das war ja der Fix für den vorigen Bug) — konnte also
+GENAU WÄHREND sie mitten in einem Satz war auslösen, unsere Cue injizieren,
+ihren Turn unterbrechen → `onInterruption` reißt den `speakStream` ab → Audio
+zur Tür stirbt, der Agent macht aber unbeirrt mit einem neuen Turn weiter
+(daher läuft das Terminal-Log normal weiter).
+
+**Fix:** `armSilenceTimer()` injiziert jetzt NUR NOCH, wenn `speakingCount === 0`
+(Mikro offen, Nera spricht gerade nicht) — feuert der Timer währenddessen,
+wird einfach neu bewaffnet statt injiziert. Zusätzlich: die Cue-Texte selbst
+sind jetzt ausformulierte Anweisungen statt kryptischer Codes (`[SYSTEM_CUE:
+visitor_silent_final]` → `[SYSTEM NOTE — … Say your closing line now, exactly:
+"Thanks for stopping by — see you next time!" …]`) — der zweite Live-Test zeigte
+auch, dass die Agent-LLM die beiden Codes NICHT zuverlässig auseinanderhielt
+(„saying goodbye and ending the call" geloggt, aber Nera sagte „Are you still
+there? Do you need any more help?" statt der Abschiedszeile — Anruf endete zwar
+trotzdem korrekt über `pendingEndCall`, aber mit falschem Wortlaut).
+
+**🔲 Weiterhin offen:** **Erneute Live-Verifikation zwingend nötig** — das ist
+jetzt der ZWEITE Redesign in Folge, der vorige hat live versagt. Bitte nicht
+blind vertrauen.
+
+---
+
 ## 1. Wo wir stehen (Kurzfassung)
 
-Branch `robo-dog-fix_Version_Gerald`, letzter Commit `73764b0` (fix(door): make
-Ring intercom return-audio audible + multi-turn robust). Seitdem liegt
-**ungecommiteter Working-Tree-Stand** vor — siehe Abschnitt 2. Beide Pakete
+**Update 2026-06-07 ~13:30:** Der in Abschnitt 2 beschriebene Working-Tree-Stand
+(H-Revert + `human_fallback`) wurde inzwischen committet und gepusht (`31e9c91`,
+Branch `robo-dog-fix_Version_Gerald`). **Seitdem liegt ein NEUER, ungecommiteter
+Working-Tree-Stand vor:** G, A, B, D aus Abschnitt 7 wurden auf Geralds Anweisung
+direkt nacheinander umgesetzt (Details + Live-Verifikations-Hinweise in Abschnitt 11,
+Eintrag „G, A, B, D umgesetzt"). Betroffen: `kiosk.js`, `door-bridge.ts`,
+`convai-ws.ts` (neue `sendUserMessage()`-Methode), `instructions.md`. Beide Pakete
 (`@nera/door-intercom`, `@nera/orchestrator`) typecheck aktuell sauber.
+
+Branch `robo-dog-fix_Version_Gerald`, committeter Stand `31e9c91` (feat(skills): add
+human_fallback skill...), davor `73764b0` (fix(door): make Ring intercom return-audio
+audible + multi-turn robust).
 
 **Großes Thema der letzten Sessions:** Der Ring-Türlautsprecher war stumm. Das
 ist gelöst (Speaker-Open + Multi-Turn + Serialisierung + Echo-Fix, alle live
@@ -274,7 +318,16 @@ danach den Call beenden.
    (Nera ihre Abschiedszeile sprechen lassen — z. B. via `setTimeout` nach dem
    `onAgentResponse`/`speakingCount`-Zyklus), dann `door.endCall()`.
 
-**Status:** 🔲 offen — Schritt 1 ist Prompt-Arbeit (Skills-Team/Gerald), Schritt 2 Code (Bridge).
+**Status:** ✅ implementiert (2026-06-07, Live-Verifikation aussstehend) — siehe Abschnitt 11.
+- `skills/instructions.md`: neuer Block „Letting in an expected visitor (door path)" mit
+  exakt Geralds Abschluss-Frage *„Before I let you in — is there anything else I can help
+  you with?"*, danach erst `open_door`.
+- `door-bridge.ts` `open_door`-Branch ([:189-199](apps/orchestrator/src/intercom/door-bridge.ts:189)):
+  setzt `pendingEndCall = true` und antwortet mit *„The door is open — come on in! Thanks
+  for stopping by — see you next time!"* — der neue `pendingEndCall`-Mechanismus lässt
+  Nera die Zeile zu Ende sprechen (über den bestehenden `speakingCount`-Zyklus, [:159-171](apps/orchestrator/src/intercom/door-bridge.ts:159))
+  und ruft danach automatisch `door.endCall()` — kein geratenes `setTimeout`, sondern an
+  das tatsächliche Ende der Sprachausgabe gekoppelt.
 
 ### B) Display-Hold beim Call-Ende
 **Geralds Vorgabe:** Display soll nach Call-Ende noch **100 Sekunden** stehen
@@ -292,7 +345,12 @@ zurechtfindet.
    `broker.doorState("idle")` kann sofort bleiben (betrifft nur den
    Gesprächsstatus, nicht den Screen-Inhalt).
 
-**Status:** 🔲 offen, baut auf A auf (A definiert den Moment, ab dem der Hold-Timer startet).
+**Status:** ✅ implementiert (2026-06-07, Live-Verifikation ausstehend) — `DISPLAY_HOLD_MS = 100_000`
+([door-bridge.ts:36](apps/orchestrator/src/intercom/door-bridge.ts:36)), `shownThisCall`-Flag
+wird im `show_destination`-Branch gesetzt, `onCallEnd` verzögert `broadcastIdle()` per
+`displayHoldTimer` um `DISPLAY_HOLD_MS`, falls in diesem Call etwas gezeigt wurde —
+`broker.doorState("idle")` bleibt sofort. Reset von Flag/Timer in `startConversation()`
+(neuer Anruf während laufendem Hold cancelt den alten Timer sauber).
 
 ### C) Agent-Prompt-Loop-Fix
 **Geralds Vorgabe:** *„siehe #A"* — wird durch die Lösung von A miterledigt: die
@@ -336,7 +394,64 @@ Abschluss-Frage + das gezielte Call-Ende ersetzen das ungebremste
    NICHT im selben Zug wie die Inaktivitäts-Logik anfassen, sonst vermischen
    sich zwei unabhängige Variablen und Messergebnisse werden uninterpretierbar.
 
-**Status:** 🔲 offen — eigenständiger Implementierungsblock, klar spezifiziert.
+**Status:** ✅ implementiert (2026-06-07) — **⚠️ ein Mechanismus-Teil braucht zwingend
+Live-Verifikation, siehe Warnung unten.**
+
+**Durchgeführt:**
+- `INACTIVITY_PROMPT_MS = 10_000`, `STILL_THERE_CAP = 1` ([door-bridge.ts:37-38](apps/orchestrator/src/intercom/door-bridge.ts:37))
+  — bewusst getrennt von `TURN_GAP_MS` (Schritt D.5: nicht angefasst, bleibt 700ms,
+  unverändert seit dem H-Revert).
+- `armInactivityTimer()`/`clearInactivityTimer()` ([door-bridge.ts:69-90](apps/orchestrator/src/intercom/door-bridge.ts:69)):
+  Timer läuft nur, solange das Mikro offen ist — gestartet beim Mikro-Öffnen
+  (`finally`-Block, [:159](apps/orchestrator/src/intercom/door-bridge.ts:159)) und bei
+  jedem Visitor-Transcript neu bewaffnet (`onUserTranscript`, [:134](apps/orchestrator/src/intercom/door-bridge.ts:134)),
+  gestoppt sobald Nera zu sprechen beginnt (Mikro schließt).
+- Bei Ablauf 1: einmaliger Check-in via injiziertem `[SYSTEM_CUE: visitor_silent]`
+  (s. u.), Timer läuft weiter für die Antwort.
+- Bei Ablauf 2 (Cap erreicht, weiterhin still): `[SYSTEM_CUE: visitor_silent_final]`
+  injiziert + `pendingEndCall = true` → Nera spricht die Abschiedszeile, danach
+  automatisches `door.endCall()` (derselbe `pendingEndCall`-Mechanismus wie bei A).
+- `skills/instructions.md`, neuer Abschnitt „Visitor inactivity (door path)":
+  enthält die Toleranz-Regel (normale Denkpausen ignorieren) sowie den exakten
+  Wortlaut für beide Cues — Abschiedsformel EN-Variante *„Thanks for stopping by —
+  see you next time!"* (= Geralds *„Vielen Dank für Ihren Besuch, bis zum nächsten
+  Mal"*, an die durchgehend englische Tonalität des Agenten angepasst — selbe
+  Formel wird auch am Ende von A nach `open_door` gesprochen, ein einheitlicher
+  Abschiedsklang für beide Call-Ende-Pfade).
+
+**⚠️ WICHTIGE WARNUNG — Mechanismus zum „Prompt auslösen" ist nicht 100% verifizierbar
+ohne Live-Test:**
+ElevenLabs' Conversational-AI-WS-Protokoll bietet **keine** dokumentierte Nachricht,
+mit der ein Client den Agenten zu einer proaktiven Äußerung „zwingen" kann (recherchiert
+über die offizielle Doku, s. u.). Es gibt zwei Kandidaten:
+- `contextual_update` — laut Doku explizit „non-interrupting … does not require a
+  direct response" → **ungeeignet**, würde sehr wahrscheinlich NICHT zu einer
+  hörbaren Äußerung führen.
+- `user_message` (`{ type: "user_message", text }`) — laut Doku „will be treated
+  as a user message and will prompt the agent to take its turn" → **das ist der
+  einzige dokumentierte Weg, einen Agenten-Turn ohne echtes Visitor-Audio
+  auszulösen**, daher meine Wahl.
+
+Ich injiziere daher `[SYSTEM_CUE: visitor_silent]` / `[SYSTEM_CUE: visitor_silent_final]`
+über `convai.sendUserMessage()` (neue Methode in [convai-ws.ts:131-134](apps/orchestrator/src/agent/convai-ws.ts:131))
+— technisch wird das wie eine Visitor-Äußerung behandelt und löst zuverlässig einen
+Agenten-Turn aus (das ist dokumentiert). Das **Risiko**: ob die LLM hinter Nera die
+eckige-Klammer-Konvention `[SYSTEM_CUE: …]` zuverlässig als internes Signal erkennt
+(statt es als tatsächliche Visitor-Aussage misszuverstehen — z. B. mit „Entschuldigung,
+das habe ich nicht verstanden" zu reagieren), hängt von der Prompt-Befolgung der
+ElevenLabs-Agent-LLM ab und **lässt sich nur live verifizieren**. Die Anweisung dazu
+steht klar in `instructions.md` („this is an internal signal … never read it aloud").
+
+**Bitte vor der Demo einmal bewusst testen:** Gespräch starten, ~12s schweigen
+(>`INACTIVITY_PROMPT_MS`), hören ob Nera „Just checking — are you still there?" sagt
+(nicht den injizierten Text wörtlich vorliest). Antwortet man, sollte es normal
+weitergehen; bleibt man weiter still, sollte nach erneuten ~10s die Abschiedszeile
+kommen und der Call enden. Mit `$env:DOOR_DEBUG=1` lassen sich die `[door] visitor
+silent — …`-Logs mitverfolgen.
+
+**Quellen (Recherche zu Client→Server-Nachrichtentypen):**
+[contextual_update-Doku via Suchergebnis](https://elevenlabs.io/docs/conversational-ai/customization/events/client-to-server-events),
+[user_message via Agent-WebSocket-Doku](https://elevenlabs.io/docs/eleven-agents/api-reference/eleven-agents/websocket)
 
 ### E) Yodeck-Setup
 **Geralds Vorgabe:** *„wird gerade aufgesetzt"* — läuft bereits bei Gerald/Team.
@@ -378,7 +493,10 @@ falls ja, optional einen passenden visuellen Stil (Farbe/Icon) dafür ergänzen,
 sonst reicht der Text-Snack allein. Kleine, risikoarme Änderung — eine Zeile
 Logik, kein Pipeline-Eingriff.
 
-**Status:** 🔲 offen — Vorschlag steht, Umsetzung ist trivial (~5 Minuten).
+**Status:** ✅ erledigt (2026-06-07) — Branch `else if (state === "fallback")` exakt wie
+vorgeschlagen ergänzt ([kiosk.js:106-109](apps/kiosk/public/kiosk.js:106)). `showSnack`
+nutzt `kind` nur für die `"ring"`-Variante (kein generisches Styling, siehe `unlocked`,
+das ebenfalls ohne `kind` auskommt) — daher reicht der Text-Snack ohne CSS-Eingriff.
 
 ### H) Audio-Pipeline-Umbau — ✅ ERLEDIGT (verworfen, 2026-06-07)
 **Geralds Vorgabe:** *„mit dem aktuellen Setup funktioniert die Unterhaltung.
@@ -566,3 +684,172 @@ Wege sind jetzt ohne den Umbau-Unsicherheitsfaktor begehbar.
   Live-Debugging starten — Empfehlung: mit `$env:DEBUG="ring";
   $env:DOOR_DEBUG="1"; corepack pnpm dev` direkt mit voller Logging-Sicht
   beginnen, dann G oder A+D als nächste inhaltliche Schritte (Abschnitt 10)
+
+### [2026-06-07 ~13:30] G, A, B, D umgesetzt — Reihenfolge aus Abschnitt 10 abgearbeitet
+
+Auf Geralds Anweisung („1. starte mit G, 2. fahre fort mit A+D") direkt nacheinander
+umgesetzt. Alle vier Punkte sind committet/typecheck-clean, **Live-Verifikation steht
+noch aus** (insbesondere D, siehe Warnung dort).
+
+- **G** ([kiosk.js:106-109](apps/kiosk/public/kiosk.js:106)): `fallback`-Branch in
+  `onDoorState()` ergänzt — exakt nach Geralds eigenem Vorschlag aus Abschnitt 7G.
+- **A** ([door-bridge.ts](apps/orchestrator/src/intercom/door-bridge.ts), `instructions.md`):
+  Abschluss-Frage vor `open_door` + automatisches `door.endCall()` nach der
+  Abschiedszeile. Neuer `pendingEndCall`-Mechanismus koppelt das Call-Ende an das
+  tatsächliche Ende von Neras Sprachausgabe (über den bestehenden
+  `speakingCount`-Zyklus) — **kein geratener `setTimeout`-Wert**, robuster als
+  Geralds ursprünglicher Vorschlag in Abschnitt 7A.
+- **B** ([door-bridge.ts:36](apps/orchestrator/src/intercom/door-bridge.ts:36)):
+  `DISPLAY_HOLD_MS = 100_000` (Geralds 100s, nicht meine ursprünglich vorgeschlagenen
+  60s), `shownThisCall`-Tracking + verzögertes `broadcastIdle()`.
+- **D** ([door-bridge.ts:37-90](apps/orchestrator/src/intercom/door-bridge.ts:37),
+  `instructions.md`): Inaktivitäts-Timer (`INACTIVITY_PROMPT_MS = 10_000`,
+  `STILL_THERE_CAP = 1`), strikt getrennt von `TURN_GAP_MS` (Schritt D.5 befolgt —
+  `TURN_GAP_MS` unangetastet bei 700ms). Check-in + Abschied werden über
+  `convai.sendUserMessage()` (neue Methode, injiziert `[SYSTEM_CUE: …]`-Marker als
+  Visitor-Text) ausgelöst.
+  **⚠️ Das ist der einzige Teil dieser Session mit echtem Live-Verifikations-Risiko**
+  — recherchiert (`contextual_update` vs. `user_message`, Quellen in Abschnitt 7D),
+  aber ob die Agent-LLM die `[SYSTEM_CUE: …]`-Konvention wie in `instructions.md`
+  beschrieben befolgt (statt sie als reale Visitor-Aussage misszuverstehen), ist nur
+  live zu verifizieren.
+- **C** löst sich automatisch mit A (wie von Gerald erwartet — keine separate Aktion).
+- Beide Pakete typecheck clean (`tsc --noEmit` exit 0 für `@nera/door-intercom` und
+  `@nera/orchestrator`).
+- Status: ✅ G/A/B/D implementiert · 🔲 Gerald: **Live-Test vor der Demo** —
+  insbesondere D (12s-Stille-Probe, siehe Testanleitung in Abschnitt 7D), dann A
+  (Abschluss-Frage → `open_door` → automatisches Call-Ende), dann optional B
+  (Display-Hold über 100s beobachten). Match-Analyse-Fixes (Abschnitt 8, Punkte 2–4)
+  und Dead-Code (`this.speaking`) bleiben offen für eine spätere Runde.
+
+### [2026-06-07 ~14:30] Inaktivitäts-Watchdog redesignt (Live-Bug-Fix, Branch `robo-dog-fix_remaining-bugs`)
+
+Gerald hat einen Live-Mitschnitt des committeten D-Stands (`de3df6a`) geschickt —
+**der Mechanismus hat live versagt.** Der Call lief 86 Sekunden, Nera sagte
+mindestens 5x „Wouf! Are you still there?" (mal von sich aus, einmal durch
+unseren injizierten `[SYSTEM_CUE: visitor_silent]`), und der Call endete am
+Ende durch Rings eigenen `camera_rsp_timeout` — NICHT durch unsere Logik.
+
+**Root Cause (per Log-Analyse gefunden):**
+1. Mein `armInactivityTimer()` war an `speakingCount === 0` (Mikro offen)
+   gekoppelt — bei jedem Turn (egal ob Visitor- oder Nera-initiiert) wurde er
+   gestoppt und beim Wieder-Öffnen neu gestartet.
+2. `onUserTranscript` hat den Timer bei JEDEM Transkript neu bewaffnet —
+   **auch** bei den Filler-Transkripten `"..."`, die ElevenLabs offenbar bei
+   erkannter Stille/Hintergrundrauschen sendet (im Log mehrfach sichtbar als
+   `[door] visitor: "..."`). Das verstößt gegen Geralds eigene Spezifikation
+   („Es soll ausschließlich natürliche Sprache erkannt/angenommen werden").
+3. Der Agent selbst läuft mit einem EIGENEN, plattformseitigen
+   Stille-Verhalten — DAS war Geralds ursprünglich gemeldeter Bug („Nera loopt
+   mit Are you still there"). Dieses Verhalten ist von uns aus nicht
+   abschaltbar (kein dokumentierter Client→Server-Mechanismus dafür) und
+   feuert offenbar in kürzeren Abständen als unsere `INACTIVITY_PROMPT_MS`
+   (10s) — jede dieser Äußerungen + jedes folgende `"..."`-Transkript hat
+   unseren Timer zurückgesetzt, bevor er je auslösen konnte. Zwei
+   unkoordinierte Loops liefen parallel, unserer hat nie gewonnen.
+
+**Fix — kompletter Redesign zu einer einzigen ABSOLUTEN Stille-Uhr:**
+- `armSilenceTimer()`/`clearSilenceTimer()` ([door-bridge.ts:75-99](apps/orchestrator/src/intercom/door-bridge.ts:75))
+  ersetzen `armInactivityTimer()`/`clearInactivityTimer()`. Der neue Timer misst
+  die Zeit seit der LETZTEN ECHTEN Besucher-Äußerung — nicht seit dem letzten
+  Mikro-Öffnen. Neras eigene Turns (inkl. ihres nativen Loops) fassen ihn nicht
+  mehr an — siehe Doc-Kommentar im Code, der das explizit begründet.
+- Gestartet wird er genau einmal, beim ERSTEN Mikro-Öffnen (`silenceTimerArmed`-Flag,
+  [:178-184](apps/orchestrator/src/intercom/door-bridge.ts:178)) — danach ausschließlich
+  durch `onUserTranscript` zurückgesetzt, UND NUR wenn der Text echte Sprache enthält
+  (`REAL_SPEECH_RE = /[\p{L}\p{N}]/u`, [:38](apps/orchestrator/src/intercom/door-bridge.ts:38))
+  — Filler wie `"..."` wird jetzt korrekt ignoriert, weder Reset noch
+  „Engagement"-Signal.
+- `stillThereCount`/`STILL_THERE_CAP` (Zähler) → `checkedInOnce` (Flag) — das ist
+  funktional dasselbe „ask once"-Cap aus der Spec, aber als einfacher Boolean
+  unmissverständlicher: entweder wurde schon einmal nachgefragt oder nicht.
+  Wird bei echter Besucher-Sprache zurückgesetzt (frische Erlaubnis für eine
+  künftige Stille-Episode im selben Call).
+- `clearInactivityTimer()`-Aufrufe in `onAgentAudio` (Mikro schließt) entfernt —
+  bewusst, da die neue Uhr von Neras Sprechrhythmus komplett entkoppelt sein muss.
+
+**Ergebnis:** Die neue Uhr kann von Neras eigenem Loop nicht mehr „überholt" oder
+zurückgesetzt werden — sie tickt unabhängig weiter, bis entweder echte
+Besucher-Sprache reinkommt oder zwei volle `INACTIVITY_PROMPT_MS`-Fenster
+(Check-in, dann Abschied) ohne Antwort verstreichen.
+
+**Bitte beim nächsten Live-Test besonders beobachten:** ob der Call jetzt
+zuverlässig nach ca. 2×10s echter Stille mit der Abschiedszeile *„Thanks for
+stopping by — see you next time!"* endet — unabhängig davon, wie oft Nera
+selbst zwischendurch proaktiv nachfragt. Logs dazu: `[door] visitor silent —
+checking in...` und `[door] visitor silent after check-in — saying goodbye...`.
+
+- Beide Pakete weiterhin typecheck clean (`tsc --noEmit` exit 0).
+- Status: ✅ Redesign implementiert (Code-Review + Typecheck) · 🔲 Gerald:
+  **erneuter Live-Test zwingend** bevor D als „done" gilt — der erste Versuch
+  ist live durchgefallen, also nicht blind vertrauen, auch wenn die Logik jetzt
+  sauberer aussieht.
+
+### [2026-06-07 ~15:30] Audio-Abriss durch sendUserMessage()-Interrupt behoben (Live-Test #2)
+
+Gerald hat **sofort wieder live getestet** (gute Schlagzahl!) und drei weitere
+Mitschnitte geschickt. Diesmal ein deutlich ernsterer Fund als beim letzten Mal:
+
+**Symptom (Geralds Beschreibung):** „it cut of the voice conversation" — die
+Tür-Lautsprecher-Ausgabe bricht MITTEN im Satz ab (genau als Nera anfängt:
+*„Wouf! You're looking for Alexander Sanchez de la Cerda, our founder and
+owner. I can show you the way."*), **aber das Terminal-Log läuft normal weiter**
+— `show_destination`, weitere `Nera:`-Zeilen, sauberes Call-Ende nach 35s, alles
+sieht im Log unauffällig aus. Besucher hört nichts mehr, System „glaubt", alles
+liefe normal — Totalausfall der Demo-Funktion bei scheinbar grünem Log.
+
+**Root Cause:** `convai.sendUserMessage()` injiziert Text, der von ElevenLabs
+**wie eine echte Besucher-Aussage behandelt wird — inklusive deren
+Interrupt-Verhalten**: spricht der Agent gerade, wird sein Turn SOFORT
+abgebrochen (offiziell dokumentiertes ConvAI-Verhalten, „when a user sends a
+text message while the AI is speaking, the AI will immediately stop its current
+response"). Mein `armSilenceTimer()` aus dem vorigen Fix lief bewusst
+UNABHÄNGIG von `speakingCount` (das war ja gerade die Lösung für den
+Race-Condition-Bug zuvor) — er konnte also genau dann auslösen, wenn Nera
+mitten in einem Satz war. Die injizierte Cue unterbricht sie →
+`onInterruption`-Handler reißt `speakStream` ab ([door-bridge.ts:196-203](apps/orchestrator/src/intercom/door-bridge.ts:196))
+→ Tür-Audio stirbt sofort. Der Agent verarbeitet die injizierte Nachricht aber
+ganz normal weiter und produziert neue Turns — daher läuft das Log scheinbar
+unauffällig weiter, obwohl der Besucher längst nichts mehr hört.
+
+**Zweiter Fund — Cue-Codes werden nicht zuverlässig befolgt (genau das von mir
+in Abschnitt 7D dokumentierte Risiko, jetzt live bestätigt):** Im dritten
+Mitschnitt loggt die Bridge korrekt `„visitor silent after check-in — saying
+goodbye and ending the call"` (unsere Logik hat also richtig erkannt, dass es
+Zeit ist, den Call zu beenden, und `pendingEndCall=true` gesetzt) — aber Nera
+sagt **nicht** die Abschiedszeile, sondern erneut *„Wouf! Are you still there?
+Do you need any more help?"*. Der Call endet zwar trotzdem korrekt (über den
+`pendingEndCall`-Mechanismus, der unabhängig vom gesprochenen Wortlaut
+funktioniert), aber mit falschem Wortlaut — die LLM unterscheidet
+`[SYSTEM_CUE: visitor_silent]` und `[SYSTEM_CUE: visitor_silent_final]`
+offenbar nicht zuverlässig genug.
+
+**Fix (beide Probleme in einem Rutsch):**
+1. **Interrupt-Schutz** ([door-bridge.ts:104-111](apps/orchestrator/src/intercom/door-bridge.ts:104)):
+   `armSilenceTimer()` injiziert jetzt NUR NOCH, wenn `speakingCount === 0`.
+   Feuert der Timer während Nera spricht, wird er einfach neu bewaffnet
+   (`armSilenceTimer()` rekursiv) statt zu injizieren — kein Interrupt, kein
+   Audio-Abriss, einfach ein Recheck nach ihrem Turn.
+2. **Ausformulierte Cues statt kryptischer Codes** ([door-bridge.ts:40-54](apps/orchestrator/src/intercom/door-bridge.ts:40),
+   `SILENCE_CHECK_IN_CUE`/`SILENCE_GOODBYE_CUE`): statt `[SYSTEM_CUE:
+   visitor_silent_final]` (die LLM muss sich erinnern, was das bedeutet) wird
+   jetzt die komplette Anweisung INLINE mitgeschickt — z. B. *„[SYSTEM NOTE —
+   … Say your closing line now, exactly: \"Thanks for stopping by — see you
+   next time!\" Then stop talking — the call ends automatically right
+   after.]"*. Das nimmt der LLM die Interpretationsarbeit ab — sie muss nur
+   noch die eingebettete Anweisung befolgen, nicht erst einen Code dekodieren.
+   `instructions.md` entsprechend vereinfacht — generische Regel für
+   `[SYSTEM NOTE — …]`-Nachrichten statt einer Code-Tabelle.
+
+**Wichtige Erkenntnis für künftige Bridge-Logik:** `sendUserMessage()` ist
+NIEMALS „nebenwirkungsfrei" einzusetzen — jede Injektion ist ein potenzieller
+Interrupt. Jede Stelle, die das nutzt, MUSS vorher `speakingCount === 0`
+prüfen. Das gilt auch für etwaige künftige Erweiterungen.
+
+- Beide Pakete weiterhin typecheck clean (`tsc --noEmit` exit 0).
+- Status: ✅ Fix implementiert (Code-Review + Typecheck) · 🔲 Gerald:
+  **DRITTER Live-Test nötig** — bitte gezielt beobachten: (a) bricht das
+  Tür-Audio noch irgendwo mitten im Satz ab? (b) sagt Nera beim Call-Ende durch
+  Inaktivität jetzt die korrekte Abschiedszeile *„Thanks for stopping by — see
+  you next time!"*? Beides bitte explizit gegenhören, nicht nur das Terminal-Log
+  prüfen — genau DAS war ja das Problem (Log sah gut aus, Audio war tot).
