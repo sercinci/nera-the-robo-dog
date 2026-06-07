@@ -33,6 +33,9 @@ const SAMPLE_RATE = 16000;
 const TURN_GAP_MS = 700; // silence after the last agent chunk => end of a spoken turn
 const DOOR_GAIN = 3; // amplify Nera for the quiet intercom speaker (matches the working mp3 volume=3.0)
 const DOOR_DEBUG = process.env.DOOR_DEBUG === "1"; // verbose mic mute/capture diagnostics
+const DISPLAY_HOLD_MS = 100_000; // keep the last destination on screen this long after the call ends
+const INACTIVITY_PROMPT_MS = 10_000; // visitor silence (mic open) before Nera checks in once
+const STILL_THERE_CAP = 1; // at most one "are you still there?" check-in per call
 
 export function startDoorBridge(args: {
   cfg: Config;
@@ -58,6 +61,36 @@ export function startDoorBridge(args: {
   let speakStream: PassThrough | null = null; // live WAV stream feeding door.speak()
   let micSent = 0; // diagnostic: visitor chunks forwarded to the agent (DOOR_DEBUG)
   let micDropped = 0; // diagnostic: visitor chunks dropped because Nera was speaking
+  let pendingEndCall = false; // end the call once Nera finishes the utterance in flight
+  let shownThisCall = false; // a destination was shown on screen during this call
+  let displayHoldTimer: ReturnType<typeof setTimeout> | undefined; // delays broadcastIdle() after call end
+  let inactivityTimer: ReturnType<typeof setTimeout> | undefined; // visitor-silence watchdog (mic open)
+  let stillThereCount = 0; // "are you still there?" check-ins sent this call (capped at STILL_THERE_CAP)
+
+  function clearInactivityTimer() {
+    if (inactivityTimer) clearTimeout(inactivityTimer);
+    inactivityTimer = undefined;
+  }
+
+  // Runs while the door mic is open. Tolerates normal thinking pauses; after
+  // INACTIVITY_PROMPT_MS of visitor silence, checks in once, then says goodbye
+  // and ends the call if there's still no response.
+  function armInactivityTimer() {
+    clearInactivityTimer();
+    inactivityTimer = setTimeout(() => {
+      inactivityTimer = undefined;
+      if (stillThereCount < STILL_THERE_CAP) {
+        stillThereCount++;
+        log.info("[door] visitor silent — checking in ('are you still there?')");
+        convai?.sendUserMessage("[SYSTEM_CUE: visitor_silent]");
+        armInactivityTimer(); // give them another window to answer the check-in
+      } else {
+        log.info("[door] visitor silent after check-in — saying goodbye and ending the call");
+        pendingEndCall = true;
+        convai?.sendUserMessage("[SYSTEM_CUE: visitor_silent_final]");
+      }
+    }, INACTIVITY_PROMPT_MS);
+  }
 
   // End-of-turn: stop streaming to the door and dump the turn's audio for verification.
   function endTurn() {
@@ -82,6 +115,14 @@ export function startDoorBridge(args: {
     convai?.close();
     turnChunks = [];
     speakingCount = 0;
+    pendingEndCall = false;
+    stillThereCount = 0;
+    clearInactivityTimer();
+    shownThisCall = false;
+    if (displayHoldTimer) {
+      clearTimeout(displayHoldTimer);
+      displayHoldTimer = undefined;
+    }
     convai = new ConvaiSession(
       { agentId: cfg.elevenLabsAgentId!, apiKey: cfg.elevenLabsApiKey, dynamicVariables: { directory } },
       {
@@ -90,7 +131,10 @@ export function startDoorBridge(args: {
           log.info(`[door] Nera: "${t}"`);
           broker.doorState("speaking");
         },
-        onUserTranscript: (t) => log.info(`[door] visitor: "${t}"`),
+        onUserTranscript: (t) => {
+          log.info(`[door] visitor: "${t}"`);
+          armInactivityTimer(); // visitor responded — restart the silence watchdog
+        },
         onAgentAudio: (pcm) => {
           broker.agentAudio(pcm); // browser at normal level
           const boosted = amplifyPcm(pcm, DOOR_GAIN); // intercom speaker is quiet
@@ -98,6 +142,7 @@ export function startDoorBridge(args: {
           // Start a live WAV stream to the door on the first chunk of a turn.
           if (!speakStream && door?.inCall) {
             log.info("[door] 🔊 streaming Nera to the door…");
+            clearInactivityTimer(); // mic is closing — stop counting visitor silence
             speakStream = new PassThrough();
             speakStream.write(wavHeader(SAMPLE_RATE, WAV_STREAM_DATA_SIZE)); // streaming header
             speakingCount++; // keep the door mic muted until every queued utterance finishes
@@ -111,10 +156,17 @@ export function startDoorBridge(args: {
               .catch((e) => log.error("[door] speak:", (e as Error).message))
               .finally(() => {
                 if (--speakingCount === 0) {
-                  broker.doorState("listening");
-                  if (DOOR_DEBUG) {
-                    log.info(`[door][dbg] 🎤 OPEN — dropped ${micDropped} chunks while Nera spoke`);
-                    micDropped = 0;
+                  if (pendingEndCall) {
+                    pendingEndCall = false;
+                    log.info("[door] ending call after Nera's closing line");
+                    door?.endCall();
+                  } else {
+                    broker.doorState("listening");
+                    armInactivityTimer(); // mic reopened — start counting visitor silence
+                    if (DOOR_DEBUG) {
+                      log.info(`[door][dbg] 🎤 OPEN — dropped ${micDropped} chunks while Nera spoke`);
+                      micDropped = 0;
+                    }
                   }
                 }
               });
@@ -140,7 +192,9 @@ export function startDoorBridge(args: {
               await door.unlock();
               log.info("[door] 🔓 intercom unlocked (agent open_door)");
               broker.doorState("unlocked");
-              return respond("The door is open — come on in!");
+              clearInactivityTimer(); // task done — stop watching for visitor silence
+              pendingEndCall = true; // end the call once Nera finishes the line below
+              return respond("The door is open — come on in! Thanks for stopping by — see you next time!");
             } catch (e) {
               log.error("[door] unlock failed:", (e as Error).message);
               return respond("I couldn't open the door just now.", true);
@@ -149,7 +203,10 @@ export function startDoorBridge(args: {
           if (name === "show_destination") {
             const query = String((params as { query?: unknown }).query ?? "");
             const dest = await resolveQuery(skills, query, data, { sessionId: "door", transcript: query });
-            if (dest.showOnScreen) broker.broadcastDestination(dest);
+            if (dest.showOnScreen) {
+              broker.broadcastDestination(dest);
+              shownThisCall = true;
+            }
             log.info(`[door] show_destination "${query}" -> ${dest.status} ${dest.destinationId ?? ""}`);
             return respond(
               dest.status === "resolved"
@@ -200,6 +257,8 @@ export function startDoorBridge(args: {
       convai = null;
       if (turnTimer) clearTimeout(turnTimer);
       turnTimer = undefined;
+      clearInactivityTimer();
+      pendingEndCall = false;
       if (speakStream) {
         speakStream.end();
         speakStream = null;
@@ -207,7 +266,17 @@ export function startDoorBridge(args: {
       speakingCount = 0;
       turnChunks = [];
       broker.doorState("idle");
-      broker.broadcastIdle();
+      // Keep a shown destination on screen for a while so the visitor can still
+      // read it — display-idle is decoupled from the call's end.
+      if (shownThisCall) {
+        shownThisCall = false;
+        displayHoldTimer = setTimeout(() => {
+          displayHoldTimer = undefined;
+          broker.broadcastIdle();
+        }, DISPLAY_HOLD_MS);
+      } else {
+        broker.broadcastIdle();
+      }
     },
     onRefreshToken: (t) => {
       try {

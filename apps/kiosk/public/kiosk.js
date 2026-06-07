@@ -103,6 +103,9 @@ function onDoorState(state) {
   } else if (state === "unlocked") {
     showSnack("🔓 Door open — come on in!");
     els.status.textContent = "Door opened";
+  } else if (state === "fallback") {
+    els.status.textContent = "Calling a staff member…";
+    showSnack("🙋 Getting someone from the team…");
   } else if (state === "idle") {
     showIdle();
   }
