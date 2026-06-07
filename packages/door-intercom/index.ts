@@ -138,7 +138,29 @@ export class DoorIntercom {
         this.handlers.onCallEnd?.(info);
       });
 
-      this.handlers.onCallStart?.();
+      // Fire onCallStart only once the WebRTC media is actually CONNECTED. The
+      // media path takes a couple of seconds to negotiate; audio sent before that
+      // is dropped (the intercom never hears it). Gate the conversation on it.
+      let callStarted = false;
+      const fireStart = () => {
+        if (!callStarted) {
+          callStarted = true;
+          this.handlers.onCallStart?.();
+        }
+      };
+      const pc = (
+        call as unknown as {
+          connection?: { pc?: { onConnectionState?: { subscribe: (cb: (s: string) => void) => void } } };
+        }
+      ).connection?.pc;
+      if (pc?.onConnectionState?.subscribe) {
+        pc.onConnectionState.subscribe((s) => {
+          if (s === "connected") fireStart();
+        });
+        setTimeout(fireStart, 8000); // safety net if 'connected' never fires
+      } else {
+        fireStart();
+      }
 
       // Stream the visitor's audio continuously as mono PCM s16le.
       await call.startTranscoding({

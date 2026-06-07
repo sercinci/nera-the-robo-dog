@@ -139,13 +139,6 @@ export const Destination = z.object({
    * voice answer is the hero; the screen is ambient + informational-when-needed.
    */
   showOnScreen: z.boolean().default(true),
-  /**
-   * Whether the orchestrator authorized a physical door unlock for this turn.
-   * Set deterministically from the confidence score (see apps/orchestrator/door.ts) —
-   * NEVER decided by the LLM. The doorguard still refuses any visitor REQUEST to
-   * open a door; this flag is a system action on a verified appointment only.
-   */
-  openDoor: z.boolean().default(false),
   pose: Pose.default(null), // for Go2Sink
   candidates: z.array(Candidate).default([]), // populated when status === "ambiguous"
   confidence: z.number().min(0).max(1).default(0),

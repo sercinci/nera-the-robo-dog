@@ -57,6 +57,10 @@ export class Broker extends EventEmitter {
           // ElevenLabs agent path: a show_destination tool call relayed by the kiosk.
           this.emit("resolve", id, String(m.query ?? ""), m.reqId);
           break;
+        case "unlock":
+          // open_door tool call relayed by the kiosk (physical unlock happens server-side).
+          this.emit("unlock", id, m.reqId);
+          break;
         case "speech_end":
           this.emit("speechEnd", id);
           break;
