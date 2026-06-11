@@ -169,8 +169,7 @@ Contributor list derived from repository history:
 | Contributor | Notes |
 | --- | --- |
 | Federico Ercole ([@sercinci](https://github.com/sercinci)) | Orchestrator, voice, Ring door integration. |
-| Gerald Pögl / Geri | Product direction, review, live test feedback, copyright owner. |
-| Hunter-ID ([@Lukas-Hi](https://github.com/Lukas-Hi)) | Hackathon contributor. |
+| Gerald Pögl / Geri / Hunter-ID ([@Lukas-Hi](https://github.com/Lukas-Hi)) | Product direction, review, live test feedback, hackathon contributor, copyright owner. |
 | Alexander Sanchez ([@alexander-san](https://github.com/alexander-san)) | Hackathon contributor. |
 | TrinishRocky | Hackathon contributor. |
 | franckm | Hackathon contributor. |

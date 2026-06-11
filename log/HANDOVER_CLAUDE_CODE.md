@@ -1034,3 +1034,9 @@ gehärtet, und der parallele Agent-Nudge ist die Störquelle.
   `@nera/orchestrator`, `@nera/door-intercom`, `@nera/skills` clean; Orchestrator
   Vitest: 48 Tests grün.
 - Status: ✅ done
+
+### [2026-06-11 15:14] Contributor-Alias korrigiert
+- README-Contributor-Tabelle korrigiert: `Gerald Pögl / Geri` und `Hunter-ID`
+  sind dieselbe Person und wurden in eine gemeinsame Zeile zusammengeführt.
+- `AGENTS.md` blieb weiterhin ungetrackt und unverändert.
+- Status: ✅ done
