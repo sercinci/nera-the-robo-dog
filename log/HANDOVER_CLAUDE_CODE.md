@@ -1020,3 +1020,17 @@ gehärtet, und der parallele Agent-Nudge ist die Störquelle.
   (2) bricht Audio noch mitten im Satz ab? Wenn ja: steht jetzt `⚠ interruption`
   im Log genau an der Abbruchstelle? Dieses Log bitte mitschicken — danach kommt
   der gezielte Cutoff-Fix.
+
+### [2026-06-11 15:02] README aktualisiert + Secret-Scan bereinigt
+- Root-`README.md` neu geschrieben: aktueller Runtime-Stand (ElevenLabs Kiosk,
+  Ring-Door-Bridge, Client-Tools, Skill-Registry, Yodeck-Helfer, OpenRouter-Devpfad),
+  Gewinner-Zitat für HOIV Robo Dog Challenge / START Hack Vienna 2026 und
+  Contributor-Tabelle aus Git-Historie ergänzt.
+- Secret-/Key-Scan über getrackte und unignorierte Dateien durchgeführt. Ein
+  hart codierter Firebase-App-Key im vendored `ring-client-api` wurde entfernt;
+  der Fork liest jetzt `RING_FIREBASE_API_KEY` aus `.env`. `.env.example` und
+  `apps/orchestrator/.env.example` enthalten nur leere Platzhalter.
+- Verifiziert: Secret-Scan ohne Treffer für echte Werte; `tsc --noEmit` für
+  `@nera/orchestrator`, `@nera/door-intercom`, `@nera/skills` clean; Orchestrator
+  Vitest: 48 Tests grün.
+- Status: ✅ done

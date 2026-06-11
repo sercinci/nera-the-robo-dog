@@ -2,8 +2,8 @@
 // On the next buzz it plays a spoken clip back to the door so you can confirm
 // (standing at the street panel) that two-way audio works.
 //
-// Run (token from the ring fork's .env):
-//   RING_REFRESH_TOKEN=... tsx src/dev/door-talkback-test.ts
+// Run after exporting RING_REFRESH_TOKEN in your shell:
+//   tsx src/dev/door-talkback-test.ts
 import { DoorIntercom } from "@nera/door-intercom";
 import { createReadStream } from "node:fs";
 

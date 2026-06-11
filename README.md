@@ -1,156 +1,185 @@
-# 🐕 Nera the Robo Dog
+# Nera the Robo Dog
 
-A hands-free, voice-first concierge that greets walk-in visitors and guides them to their destination — built for the **Robo Dog** track.
+> "Winner of the HOIV Robo Dog Challenge at START Hack Vienna 2026."
 
-A submission for **START Hack Vienna '26**, built for the case provided by
-**Home of Innovation Vienna (HOIV)**.
+Nera is a voice-first concierge for Home of Innovation Vienna. A visitor rings the
+doorbell, tells Nera who they are here to see or where they want to go, and the
+system answers by voice while showing the destination on a display.
 
----
+The hackathon build replaces the moving Unitree Go2 with a fixed microphone,
+speaker, Ring intercom, and 4K signage. The architecture keeps the same brain and
+data contracts so the robot path can be added later.
 
-## About
+## What It Does
 
-HOIV has no traditional reception. When someone walks in, we want an unforgettable,
-hands-free welcome. **Nera** is the software brain for that: a visitor rings the
-doorbell and simply *says* where they want to go ("I'm here to see Gabriela", "the AI
-workshop"). Nera greets them by voice, understands the request, matches it against the
-building's live directory of people, rooms and events, and lights up a screen with their
-destination — in seconds, with no human receptionist. The same brain is architected to
-run on a real Unitree Go2 robot dog.
+- Greets visitors through an ElevenLabs Conversational AI agent.
+- Resolves people, rooms, zones, and events against local JSON directory data.
+- Shows the resolved destination on a browser kiosk and any connected display
+  client over WebSocket.
+- Bridges a real Ring Intercom call into the server-side ElevenLabs agent.
+- Opens the building door only when the agent explicitly calls `open_door`.
+- Falls back to a staff handoff through `human_fallback` when Nera cannot help.
 
-## The challenge
+## Current Runtime
 
-Build a doorbell-triggered voice concierge that understands natural language and shows
-the visitor's destination on a 4K display **within seconds** — treating the whole
-ring-to-display loop as a latency budget. We built the voice, matching, and signage
-brain, plus the real door-intercom and a robot-ready output path.
+There are two active demo paths:
 
-## What we built
+| Path | Runtime | Purpose |
+| --- | --- | --- |
+| Browser kiosk | `@elevenlabs/client` in `apps/kiosk/public/kiosk.js` | Fast local demo with mic, Nera UI, destination card, and client tools. |
+| Door intercom | `apps/orchestrator/src/intercom/door-bridge.ts` | Ring two-way audio bridged to the server-side ElevenLabs Conversational AI WebSocket. |
 
-- **Conversational voice agent (Nera)** — ElevenLabs Agents runs the full voice loop
-  (speech-to-text, LLM, text-to-speech, turn-taking, barge-in). Two entry points: an
-  in-browser SDK session and a **server-side bridge for the Ring door intercom**.
-- **Intent → destination matching** — the agent calls tools (`show_destination`,
-  `find_person`/`find_place`, `open_door`) that resolve against `directory.json` /
-  `people.json`; the building data stays the single source of truth.
-- **Live signage** — a browser kiosk (Nera, a copper English Cocker Spaniel) shows the
-  destination card, an incoming-buzz banner, a door-opened banner, and a latency readout;
-  the same `Destination` event also drives a Yodeck screen.
-- **Real door intercom** — Ring two-way audio is bridged to the agent; on an expected
-  visitor the agent's `open_door` tool unlocks the building door.
-- **Robot-ready output** — a Go2 navigation sink (Foxglove WebSocket + CDR) is wired and
-  protocol-verified against a mock (not yet tested on the physical dog).
+Both paths use the same three client tools exposed to the ElevenLabs agent:
 
-## Demo
+| Tool | Behavior |
+| --- | --- |
+| `show_destination` | Resolves a free-text query through `find_place`, then `find_person`, and broadcasts a `Destination`. |
+| `open_door` | Unlocks the Ring intercom during a live door call, or simulates success in browser-only demo mode. |
+| `human_fallback` | Shows fallback UI and tells the visitor a staff member will help. |
 
-- Live demo: run locally (see **Getting started**) — open the kiosk and ring the doorbell.
-- Screenshots / video: `<add demo video link>`
+The lower-level skill registry currently contains `find_person`, `find_place`,
+`check_appointment`, `navigate_floor`, and `human_fallback`. These skills return
+`MatchResult` objects only; screen content and speech are composed from
+`contracts/projection.ts`.
 
----
+## Technology Stack
 
-## Getting started
+- Runtime: Node.js `>=24`, pnpm `11.5.2`, TypeScript ESM.
+- Validation and contracts: `zod`, shared through `@nera/contracts`.
+- Server: Node HTTP, `ws`, `dotenv`, `tsx`.
+- Browser voice client: `@elevenlabs/client`, bundled locally with `esbuild`.
+- Door voice bridge: ElevenLabs Conversational AI WebSocket plus a patched
+  vendored `ring-client-api` fork.
+- Fallback/dev agent path: OpenRouter through the OpenAI-compatible SDK.
+- Optional signage control: Yodeck REST API helper and Web Page player workflow.
+- Tests: Vitest and TypeScript `tsc --noEmit`.
+
+The Go2 robot path is future-ready at the data-contract level (`pose` exists on
+destinations and `GO2_FOXGLOVE_URL` is reserved), but the current runtime does
+not depend on a physical robot.
+
+## Repository Layout
+
+```text
+apps/
+  orchestrator/       Node/TS server, WebSocket broker, Ring bridge, tools, Yodeck helper
+  kiosk/              Browser UI and ElevenLabs client-tool bridge
+  agent-runner/       Legacy Anthropic skill runner prototype
+contracts/            Zod schemas, skill contract, destination projection
+data/                 Building directory and people data
+skills/               Deterministic destination skills and agent instructions
+packages/
+  door-intercom/      Ring intercom as a reusable two-way audio device
+  ring-client-api/    Vendored Ring fork with audio-only intercom support
+assets/               Welcome copy, planimetry, avatars, and local media
+log/                  Handover and implementation notes
+tools/                Planimetry and waypoint utilities
+```
+
+## Getting Started
 
 ### Prerequisites
 
-- **Node.js 24+** and **pnpm 11+**
-- An **ElevenLabs** account with a Conversational AI **Agent** (the agent id) and an API key
-- *(optional)* an **OpenRouter** API key — used by the fallback text-agent pipeline
-- *(optional)* a **Ring** refresh token + intercom, to drive the real door
-- A modern browser (Chrome) for the kiosk; microphone access for voice
+- Node.js 24 or newer.
+- Corepack-enabled pnpm.
+- An ElevenLabs Conversational AI agent id for the live kiosk or door path.
+- Optional: ElevenLabs API key and voice id for fallback STT/TTS utilities.
+- Optional: OpenRouter API key for the legacy text-agent pipeline and harness.
+- Optional: Ring Intercom refresh token and Firebase app key for door mode.
+- Optional: Yodeck token and screen id for signage API experiments.
 
 ### Setup
 
 ```bash
-# 1. Clone the repository
-git clone <your-repo-url>
+git clone https://github.com/sercinci/nera-the-robo-dog.git
 cd nera-the-robo-dog
-
-# 2. Configure environment
 cp .env.example .env
-# fill in the required values (see .env.example / Configuration below)
-
-# 3. Install
-pnpm install
+corepack pnpm install
 ```
+
+Fill `.env` with local credentials. Do not put real values into committed files.
 
 ### Run
 
 ```bash
-pnpm dev
+corepack pnpm dev
 ```
 
-Then open `http://localhost:8787` in your browser. Click **🔔 Ring**, allow the
-microphone, and talk to Nera. (With a Ring intercom configured, pressing the physical
-panel drives the same flow and Nera's voice plays through the intercom.)
+Open `http://localhost:8787`, press `Ring doorbell`, grant microphone access,
+and talk to Nera. If Ring credentials are present, the same orchestrator also
+arms the real door path and listens for Ring buzz events.
 
----
+### Verify
 
-## Project structure
-
+```bash
+corepack pnpm typecheck
+corepack pnpm test
 ```
-contracts/            Shared Zod schemas + projection (DirectoryEntry, Person, Destination, Skill)
-data/                 directory.json + people.json (the building directory — source of truth)
-skills/               Agent skills (find_place, find_person, check_appointment, navigate_floor) + instructions
-apps/
-  orchestrator/       Node/TS spine: WS broker, ElevenLabs STT/TTS + agent, door bridge, sinks, instrumentation
-  kiosk/              Browser display + audio client (Nera's face, destination card, banners)
-packages/
-  door-intercom/      Ring door intercom as a clean two-way-audio device
-  ring-client-api/    Vendored Ring client (patched for intercom audio)
-maps/                 Planimetry / LiDAR for Go2 waypoints
+
+Useful targeted commands:
+
+```bash
+corepack pnpm -F @nera/orchestrator exec tsc --noEmit
+corepack pnpm -F @nera/orchestrator exec vitest run
+corepack pnpm -F @nera/door-intercom exec tsc --noEmit
 ```
 
 ## Configuration
 
-All settings come from environment variables. **Never commit secrets** — keep them in
-`.env` (git-ignored) and use [`.env.example`](.env.example) as the reference.
+All runtime configuration comes from environment variables. `.env` is ignored by
+Git; `.env.example` contains blank placeholders only.
 
 | Variable | Purpose |
 | --- | --- |
-| `ELEVENLABS_API_KEY` | ElevenLabs API key (TTS/STT for the fallback pipeline) |
-| `ELEVENLABS_AGENT_ID` | The Conversational AI agent the kiosk/bridge connects to |
-| `ELEVENLABS_TTS_VOICE_ID` | Nera's voice (fallback pipeline) |
-| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | Fallback text tool-calling agent |
-| `RING_REFRESH_TOKEN` / `RING_INTERCOM_DEVICE_ID` | Ring door intercom (rotates on use; persisted to `.ring-token`) |
-| `YODECK_API_TOKEN` / `YODECK_SCREEN_ID` | Optional Yodeck signage push |
-| `GO2_FOXGLOVE_URL` | Optional Go2 robot sink (unset ⇒ dry-run) |
-| `STT_COMMIT_SILENCE_MS`, `STT_VAD_THRESHOLD`, `STT_MIN_SPEECH_MS` | VAD endpointing tuning |
+| `PORT` | Orchestrator HTTP and WebSocket port. Defaults to `8787`. |
+| `LOG_LEVEL` | Server log verbosity. |
+| `ELEVENLABS_AGENT_ID` | Conversational AI agent used by the kiosk and Ring bridge. |
+| `ELEVENLABS_API_KEY` | ElevenLabs API key for fallback STT/TTS and server-side agent utilities. |
+| `ELEVENLABS_TTS_VOICE_ID` | Voice id for fallback TTS utilities. |
+| `ELEVENLABS_TTS_MODEL_ID` | Low-latency TTS model, defaulting to `eleven_flash_v2_5`. |
+| `ELEVENLABS_STT_MODEL_ID` | Realtime STT model, defaulting to `scribe_v2_realtime`. |
+| `STT_COMMIT_SILENCE_MS` | Fallback STT endpointing window. |
+| `STT_VAD_THRESHOLD` | Fallback STT VAD threshold. |
+| `STT_MIN_SPEECH_MS` | Minimum speech duration for fallback STT. |
+| `OPENROUTER_API_KEY` | Optional key for the OpenRouter-based dev pipeline. |
+| `OPENROUTER_MODEL` | OpenRouter model id, defaulting to `openai/gpt-4o-mini`. |
+| `RING_REFRESH_TOKEN` | Ring account refresh token for the intercom owner. |
+| `RING_INTERCOM_DEVICE_ID` | Optional specific Ring intercom id. |
+| `RING_FIREBASE_API_KEY` | Ring Firebase app key required by the vendored push receiver. Keep the real value in `.env`. |
+| `YODECK_API_TOKEN` | Optional Yodeck REST token. |
+| `YODECK_SCREEN_ID` | Optional target Yodeck screen id. |
+| `GO2_FOXGLOVE_URL` | Reserved for the future robot sink; unset in the current demo path. |
 
-## Architecture & assumptions
+## Security And Secrets
 
-The **ElevenLabs agent is the runner**: it handles the conversation and calls client
-tools. Those tool calls are relayed to the **orchestrator**, which matches them against
-the directory data and emits one normalized `Destination` event that every sink consumes
-(kiosk, Yodeck, Go2). For the **browser** path the agent runs in-page via the SDK; for the
-**Ring** path the orchestrator hosts the agent over a WebSocket and bridges the intercom's
-audio in/out (and forwards Nera's voice to the browser too). The door is opened only by the
-agent's `open_door` tool — never inferred from raw confidence.
+Real credentials must stay out of the repository.
 
-Assumptions: the JSON directory is the source of truth; ElevenLabs Agents is reachable; the
-public agent connects anonymously; and the Go2 path is verified against a protocol-accurate
-mock, not the physical robot.
+- `.env`, `.env.*`, and `.ring-token` are ignored.
+- `.env.example` files contain names and placeholders only.
+- The Ring refresh token rotates on use and is persisted locally to `.ring-token`.
+- The vendored Ring client reads `RING_FIREBASE_API_KEY` from the environment
+  instead of embedding the key in source.
+- Do not commit dashboard exports, API responses, logs, screenshots, or support
+  files that contain tokens.
 
-## Troubleshooting
+## Contributors
 
-- **Agent talks but the card doesn't update** → it didn't call `show_destination`; reload the kiosk and/or tighten the agent prompt.
-- **Door intercom doesn't trigger anything** → the buzz/ding is a Ring push event; confirm the intercom is online and actually ringing in the Ring app (no ding = nothing for the app to receive).
-- **`403` on the server-side agent socket** → the public agent must connect *without* an `xi-api-key` header.
-- **Port 8787 already in use** → stop the other process or set `PORT` in `.env`.
-- **No snack / old behavior in the browser** → hard-reload (Cmd/Ctrl+Shift+R) to drop cached assets.
+Contributor list derived from repository history:
 
----
+| Contributor | Notes |
+| --- | --- |
+| Federico Ercole ([@sercinci](https://github.com/sercinci)) | Orchestrator, voice, Ring door integration. |
+| Gerald Pögl / Geri | Product direction, review, live test feedback, copyright owner. |
+| Hunter-ID ([@Lukas-Hi](https://github.com/Lukas-Hi)) | Hackathon contributor. |
+| Alexander Sanchez ([@alexander-san](https://github.com/alexander-san)) | Hackathon contributor. |
+| TrinishRocky | Hackathon contributor. |
+| franckm | Hackathon contributor. |
 
-## Team
+## Award
 
-- Federico Ercole ([@sercinci](https://github.com/sercinci)) — orchestrator / voice + door integration
-- `<teammate>` — agent skills & instructions
-- `<teammate>` — screen / signage
-- `<teammate>` — data & LiDAR / robot
-
-## Submission
-
-- Track: **Robo Dog** · Case partner: **Home of Innovation Vienna (HOIV)**
-- Submitted to the START Hack Vienna '26 GitHub organisation.
+Nera was built for the HOIV "Robo Dog" track at START Hack Vienna 2026 and was
+the winning project for the challenge.
 
 ## License
 
-Released under the MIT License — see [`LICENSE`](LICENSE).
+Released under the MIT License. See `LICENSE`.

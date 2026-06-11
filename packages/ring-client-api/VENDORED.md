@@ -37,6 +37,11 @@ audio session. These patches expose that.
      that requests a signalling ticket and opens an **audio-only** WebRTC
      session for the intercom's device id.
 
+4. **`api.js`**
+   - Removed the embedded Firebase app key from the push receiver setup. The
+     fork now reads `RING_FIREBASE_API_KEY` from the environment so keys stay
+     outside the repository.
+
 ## Re-generating
 
 The source-level fork lived at `/Users/federico.ercole/personal/ring` during

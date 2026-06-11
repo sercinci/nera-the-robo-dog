@@ -121,10 +121,14 @@ export class RingApi extends Subscribed {
         }
     }
     async registerPushReceiver(cameras, intercoms) {
+        const firebaseApiKey = process.env.RING_FIREBASE_API_KEY;
+        if (!firebaseApiKey) {
+            throw new Error('RING_FIREBASE_API_KEY is required for Ring push notifications. Set it in .env.');
+        }
         const credentials = this.restClient._internalOnly_pushNotificationCredentials?.config &&
             this.restClient._internalOnly_pushNotificationCredentials, pushReceiver = new PushReceiver({
             firebase: {
-                apiKey: 'AIzaSyCv-hdFBmmdBBJadNy-TFwB-xN_H5m3Bk8',
+                apiKey: firebaseApiKey,
                 projectId: 'ring-17770',
                 messagingSenderId: '876313859327', // for Ring android app.  703521446232 for ring-site
                 appId: '1:876313859327:android:e10ec6ddb3c81f39',
