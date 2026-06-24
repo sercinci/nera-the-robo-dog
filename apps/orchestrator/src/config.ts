@@ -27,6 +27,14 @@ const Schema = z.object({
   // Discord webhook for live human-escalation pings (human_fallback). Optional —
   // when unset, escalation just logs + updates the screen, no Discord post.
   DISCORD_WEBHOOK_URL: z.string().optional(),
+
+  // Weg B — server-enforced door gate (P2 appointment-gate, CONSOLIDATION §6).
+  // laika's gate-check endpoint, e.g. http://127.0.0.1:8000/api/v1/gate-check.
+  // When unset (or mode "off") open_door is NOT gated (legacy behaviour).
+  LAIKA_GATE_URL: z.string().optional(),
+  // off = no gate · advisory = log the decision but still open · enforce = open
+  // only if laika authorizes (fail-closed). Default advisory for safe rollout.
+  DOOR_GATE_MODE: z.enum(["off", "advisory", "enforce"]).default("advisory"),
 });
 
 export interface Config {
@@ -46,6 +54,8 @@ export interface Config {
   yodeckApiToken?: string;
   yodeckScreenId?: number;
   discordWebhookUrl?: string;
+  laikaGateUrl?: string;
+  doorGateMode: "off" | "advisory" | "enforce";
 }
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
@@ -67,5 +77,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     yodeckApiToken: e.YODECK_API_TOKEN,
     yodeckScreenId: e.YODECK_SCREEN_ID,
     discordWebhookUrl: e.DISCORD_WEBHOOK_URL,
+    laikaGateUrl: e.LAIKA_GATE_URL,
+    doorGateMode: e.DOOR_GATE_MODE,
   };
 }

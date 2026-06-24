@@ -18,6 +18,7 @@ import { skills } from "@nera/skills";
 import { pcmToWav, wavHeader, WAV_STREAM_DATA_SIZE, amplifyPcm } from "../audio/wav.js";
 import { ConvaiSession } from "../agent/convai-ws.js";
 import { resolveQuery, renderDirectoryForAgent } from "../agent/tools.js";
+import { checkGate } from "../agent/gate.js";
 import { notifyDiscord } from "../notify/discord.js";
 
 const DEBUG_WAV = "/tmp/nera-door-last.wav"; // last greeting, for verification
@@ -260,6 +261,36 @@ export function startDoorBridge(args: {
           // Agent explicitly requests the building door be opened.
           if (name === "open_door") {
             if (!door?.inCall) return respond("There's no active door call to open.", true);
+
+            // Weg B — server-enforced gate: laika decides, the agent only requests.
+            //   off      → no gate (legacy behaviour)
+            //   advisory → log what the gate WOULD decide, but still open (safe rollout)
+            //   enforce  → open ONLY if laika authorizes; fail-closed otherwise
+            if (cfg.doorGateMode !== "off" && cfg.laikaGateUrl) {
+              const p = params as { visitor_name?: string; host?: string; reason?: string };
+              const decision = await checkGate(
+                cfg.laikaGateUrl,
+                { visitorName: p.visitor_name, host: p.host, reason: p.reason, sessionId: "door" },
+                log,
+              );
+              log.info(
+                `[door] gate[${cfg.doorGateMode}] authorized=${decision.authorized} ` +
+                  `reasons=${decision.reasons.join(",") || "-"}`,
+              );
+              if (cfg.doorGateMode === "enforce" && !decision.authorized) {
+                log.info("[door] ⛔ open_door denied by gate — door stays shut");
+                broker.doorState("fallback");
+                void notifyDiscord(
+                  cfg.discordWebhookUrl,
+                  `🔒 **Nera blocked a door-open — gate denied.**\n` +
+                    `Visitor: "${p.visitor_name ?? (lastVisitorText || "(unknown)")}" · host: "${p.host ?? "(none)"}"\n` +
+                    `Reasons: ${decision.reasons.join(", ") || "(none)"}`,
+                  log,
+                );
+                return respond("Let me just check with the team before I open up — one moment!");
+              }
+            }
+
             try {
               await door.unlock();
               log.info("[door] 🔓 intercom unlocked (agent open_door)");
