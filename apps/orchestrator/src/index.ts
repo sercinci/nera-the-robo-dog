@@ -23,6 +23,7 @@ import { initialSession, reduce, type Session } from "./session.js";
 import { resolveQuery, renderDirectoryForAgent } from "./agent/tools.js";
 import { skills } from "@nera/skills";
 import { startDoorBridge } from "./intercom/door-bridge.js";
+import { notifyDiscord } from "./notify/discord.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "../../..");
@@ -335,6 +336,17 @@ async function main() {
     }
     broker.doorState("unlocked"); // -> browser snack
     broker.resolveResult(id, reqId, { status: "ok", result: "The door is open — come on in!" });
+  });
+
+  // human_fallback tool relayed from the browser agent: ping staff on Discord.
+  broker.on("humanFallback", (id: string, reason: string, query: string) => {
+    log.info(`[agent] human_fallback (reason: ${reason || "—"})`);
+    broker.doorState("fallback"); // browser snack
+    void notifyDiscord(
+      cfg.discordWebhookUrl,
+      `🔔 **Nera needs a human (kiosk).**\nVisitor said: "${query || "(nothing captured)"}"\nReason: ${reason || "unspecified"}`,
+      log,
+    );
   });
 
   broker.on("disconnect", (id: string) => {

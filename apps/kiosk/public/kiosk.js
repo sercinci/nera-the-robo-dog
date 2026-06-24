@@ -185,9 +185,13 @@ const sessionCommon = () => ({
       const r = await unlockViaServer();
       return r.result || "Done.";
     },
-    human_fallback: async () => {
+    human_fallback: async ({ reason } = {}) => {
       els.status.textContent = "Calling human assistance…";
       showSnack("Calling a staff member…");
+      // Relay to the orchestrator so it can ping staff (Discord) — the browser tool
+      // alone can't reach the server otherwise.
+      const q = (els.transcript.textContent || "").replace(/^[“"]|[”"]$/g, "");
+      ws?.send(JSON.stringify({ type: "human_fallback", reason: reason ?? "", query: q }));
       return "Let me get someone from the team to help you — just one moment!";
     },
   },

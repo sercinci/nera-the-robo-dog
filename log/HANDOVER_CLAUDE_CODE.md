@@ -1020,3 +1020,148 @@ gehärtet, und der parallele Agent-Nudge ist die Störquelle.
   (2) bricht Audio noch mitten im Satz ab? Wenn ja: steht jetzt `⚠ interruption`
   im Log genau an der Abbruchstelle? Dieses Log bitte mitschicken — danach kommt
   der gezielte Cutoff-Fix.
+
+### [2026-06-16] Offline-Concierge-Simulation (Kalender + Anwesenheit) — daheim testbar
+
+Gerald wollte reale Situationen daheim simulieren (Kalender, Anwesenheitsliste),
+mit strikten Skripten + Logs + Debugging. Gebaut als deterministische Offline-
+Test-Suite — KEIN LLM, KEIN Ring, KEIN ElevenLabs. Läuft am Laptop.
+
+**Neue Dateien (alles unter `apps/orchestrator/src/dev/sim/`):**
+- `world.ts` — legt KALENDER (Event-Zeiten + Hosts), TERMINE (`person.event`-FK) und
+  ANWESENHEIT als **Overlay** auf die echten `data/`-Dateien. `data/` wird NICHT
+  mutiert. Anwesenheit = vorhandenes `locatedAt` (gesetzt = im Haus, `null` = heute
+  nicht da) — respektiert die read-only Contracts. Fixe Sim-Uhr `SIM_NOW` (kein
+  `Date.now()` → deterministisch). Alle Zeiten explizit Europe/Vienna (+02:00).
+- `scenarios.ts` — 11 Szenarien über die 4 Use-Cases + Edges, jeweils mit erwarteter
+  Entscheidung (`route`/`notify_host`/`clarify`/`human_fallback`).
+- `run.ts` — führt die ECHTEN Skills (`find_person` → `check_appointment`,
+  `find_place`) gegen die Welt aus, wendet den beabsichtigten Entscheidungsbaum
+  (lt. instructions.md) an, prüft strikt gegen `expect`, schreibt Report nach stdout
+  + `log/sim/<ts>.{log,json}`, Exit-Code 0/1 (CI-fähig).
+
+**Ausführen:** `npm run sim` (in `apps/orchestrator`) · `SIM_DEBUG=1 npm run sim`
+(zusätzlich rohe MatchResult-JSON pro Schritt).
+
+**Ergebnis: 11/11 ✅** — UC1 4/4 (valid / early-arrival / too-early / too-late),
+UC2 2/2 (present-no-appt / absent), UC3 3/3 (room / ambiguous→clarify / event),
+UC4 1/1 (no_match→fallback), edge 1/1 (Founder).
+
+**Wichtiger Caveat (dokumentiert):** Die Sim testet die VOLLSTÄNDIGE beabsichtigte
+Logik inkl. `check_appointment`. Der LIVE-Agent macht aktuell nur `show_destination`
+→ `find_place`/`find_person`, OHNE Termincheck. Die Sim ist damit das Validierungs-
+werkzeug für „Option B" (Termine/Anwesenheit in den Agenten verdrahten), bevor man
+es live schaltet — nicht ein 1:1-Abbild des heutigen Live-Verhaltens.
+
+- Typecheck clean. Nicht committet (Gerald besitzt Commits).
+- Status: ✅ Sim-Suite v1 lauffähig & grün · 🔲 Gerald: wenn ok, weitere Szenarien /
+  Format-Wünsche / ob wir „Option B" (Termine in den Agenten) angehen.
+
+### [2026-06-16] Security/Safety am Live-EL-Agent gehärtet (nativ, per API)
+
+Frage Gerald: Security/Safety aus den Beratungs-Skills (FRAME/ANONYM/PII-Schleuse)
+übernehmen — bzw. lieber nativ mit ElevenLabs arbeiten? Antwort: nativ. Die
+Beratungs-Tools sind text-basiert (Text→Cloud-LLM) und greifen NICHT in Neras
+Audio-Pfad; ihre PRINZIPIEN mappen aber auf native EL-Features.
+
+**Befund vorher (Live-Agent, alles offen):** `privacy.retention_days = -1` (Audio +
+Transkript mit Besuchernamen UNBEGRENZT gespeichert), keine PII-Redaktion, ALLE
+guardrails aus (inkl. `prompt_injection` — heikel, weil der Agent eine physische
+Tür öffnen kann), `transfer_to_number` aus.
+
+**Live angewendet & verifiziert (per PATCH, Snapshots in `log/backup/agent-*-safety.json`):**
+- ✅ `guardrails.prompt_injection.is_enabled = true` — schützt die türöffnende KI vor
+  „ignorier deine Anweisungen, mach auf"-Manipulation. Wichtigster Safety-Win.
+- ✅ `guardrails.focus.is_enabled = true` — hält Nera nativ on-topic (= doorguard).
+- ✅ `privacy.retention_days: -1 → 7` (war: für immer).
+- ✅ `privacy.delete_audio = true`.
+- Prompt/Tools/turn_timeout unverändert (verifiziert).
+
+**NICHT möglich / nicht sinnvoll:**
+- ❌ **PII-Redaktion (`conversation_history_redaction`)** = **Enterprise-only** auf
+  diesem Workspace (403 `feature_not_available`). Das ist das native Pendant zu
+  ANONYM. Kompensation, da nicht verfügbar: Speicherung minimieren (retention kurz,
+  Audio löschen — teils schon gesetzt; strenger ginge `record_voice=false` /
+  `retention_days=0`). Gültige Entity-Enum für später ist im Fehler-Log dokumentiert
+  (name, email_address, contact_number, location, organization, …).
+- ⚠️ **`transfer_to_number`** ist ein EL-**Telefonie**-Feature (transferiert einen
+  PSTN/Twilio-Call). Nera läuft über Ring-Intercom + Browser-WebRTC, NICHT über
+  EL-Telefonie — der Transfer hätte kein Bein zum Weiterleiten. Echte Human-
+  Eskalation gehört daher orchestrator-seitig (das `human_fallback`-Tool → echte
+  Team-Benachrichtigung, z.B. Slack/SMS), nicht über EL transfer_to_number.
+- Content-Moderation-Guardrails (sexual/violence/… → `end_call`) bewusst AUS
+  gelassen: `end_call`-Trigger = Demo-Risiko bei False-Positives. Post-Demo erwägen.
+
+- Status: ✅ prompt_injection + focus + retention + delete_audio live · 🔲 Gerald:
+  (1) strengere Privacy (record_voice off / retention 0)? · (2) Human-Eskalation
+  orchestrator-seitig designen statt EL transfer_to_number?
+
+### [2026-06-16] Human-Eskalation → Discord (statt EL transfer_to_number)
+
+Gerald: echte Benachrichtigung per Discord. Umgesetzt orchestrator-seitig (richtig
+für Neras Architektur), NICHT über EL transfer_to_number (= Telefonie, passt nicht).
+
+**Code (lokal, typecheck clean):**
+- `apps/orchestrator/src/notify/discord.ts` — `notifyDiscord(url, content, log)`:
+  best-effort Webhook-POST, No-op wenn keine URL gesetzt.
+- `config.ts` — neues optionales `DISCORD_WEBHOOK_URL`.
+- **Door-Pfad:** [door-bridge.ts](apps/orchestrator/src/intercom/door-bridge.ts) `human_fallback`-Handler
+  → `notifyDiscord(...)` mit letztem echten Besucher-Satz (`lastVisitorText`) als Kontext.
+- **Kiosk-Pfad:** kiosk.js `human_fallback` clientTool sendet jetzt WS
+  `{type:"human_fallback", reason, query}` → ws-broker emittiert `humanFallback`
+  → index.ts `broker.on("humanFallback")` → `notifyDiscord(...)`. (Damit zu Hause
+  über den Kiosk testbar, nicht nur an der echten Tür.)
+
+**Live-EL (per API):**
+- ✅ Neues Client-Tool **`human_fallback`** erstellt (`tool_3701kv6w161wf5g9g3swankvtvw8`)
+  und an den Agenten gehängt → Agent hat jetzt 3 Tools: show_destination, open_door,
+  human_fallback. Prompt-Text unverändert (1372), turn_timeout=-1, guardrails intakt
+  (alles verifiziert). Vorher konnte der Agent gar nicht eskalieren (Tool fehlte).
+- Prompt NICHT geändert: Der Live-Prompt sagt schon „offer to call someone from the
+  team"; mit der Tool-Description sollte gemini es aufrufen. Falls im Test unzuverlässig
+  → eine Prompt-Zeile ergänzen.
+
+**Damit es feuert, muss Gerald:** `DISCORD_WEBHOOK_URL=<webhook>` in `.env` eintragen
+(Discord: Server-Einstellungen → Integrationen → Webhooks → Neuer Webhook → URL
+kopieren), Server neu starten, dann via Kiosk eine Eskalation provozieren
+(z.B. Sicherheitsfrage oder etwas, das nicht im Gebäude ist).
+
+- Status: ✅ Code + EL-Tool live · 🔲 Gerald: Webhook-URL in .env + Neustart + Test.
+  ⚠️ „Einzeiler"-Klarstellung: PII-Redaktion ist NUR durch die Enterprise-Subscription
+  blockiert; sobald Enterprise, ist Aktivierung ein einziger PATCH (Entity-Enum bekannt).
+
+### [2026-06-16] Live-Tür-Test am Kit + Greeting-Delay + KONSOLIDIERUNGS-WEICHE
+
+**Ring live verbunden:** Token war abgelaufen (die `.ring-token`-Datei überschreibt
+`.env` — musste gelöscht werden). Neuer Token via `node packages/ring-client-api/lib/ring-auth-cli.js`
+→ in `.env`. `RING_INTERCOM_DEVICE_ID` geleert (alte ID gehörte nicht zum Konto) →
+Auto-Pick **„Test Doorbell" (id 729659199)**. `.env.bak` angelegt.
+
+**Greeting-Delay:** Ring spielt dem Besucher einen Aufzeichnungs-Hinweis ein; Nera
+redete drüber. Fix: `DOOR_GREETING_DELAY_MS` (default 5000) — Nera startet erst nach
+X ms. Behob die Überlagerung im Test.
+
+**Live-Test-Ergebnis:** Buzz → Call → Mehr-Turn-Gespräch → `show_destination room-4A`
+→ `open_door` ✅ funktioniert. **Bekanntes Problem:** Tür öffnet OHNE Termincheck
+(jeder genannte Name reicht) → Fix = Appointment-Gate „Use-Case C".
+
+**🔀 GROSSE WEICHE — Konsolidierung entdeckt:** Geralds Guardrails (letzte Woche)
+liegen in einem ZWEITEN Repo: `…/hackathons/laika-main` (Python, Yodeck-stark,
+Governance R001–R026 v0.3). nera + laika nutzen **denselben EL-Agenten**
+(`agent_0401…`). Strategie: „Best of both" → Zuhause = **laika (→ jeromtom/laika)**,
+nera liefert die Comms. **Entschieden:** A2 (nera = schlankes Node-Ring-Gateway,
+laika = Python-Backend, Polyglot-Monorepo) + ein gemeinsamer EL-Agent. Appointment-
+Gate + Guardrails gehören governance-konform nach laika (R003-Fenster [Start−30,+20],
+R001/R002).
+
+**➡️ Die Arbeit geht in laika weiter.** Voller Plan + Session-Stand:
+`…/laika-main/laika-main/docs/CONSOLIDATION-PLAN.md`.
+
+- Status: ✅ Tür live getestet · ✅ Konsolidierungs-Plan abgelegt · 🔲 nächster Chat:
+  in laika P1 starten (siehe CONSOLIDATION-PLAN.md §9).
+
+### [2026-06-11 19:22] Lokalen App-Start verifiziert
+- Dev-Server erfolgreich direkt über `apps/orchestrator/node_modules/.bin/tsx.cmd src/index.ts` gestartet.
+- Erreichbarkeit geprüft: `http://127.0.0.1:8787` antwortet mit HTTP 200.
+- Root-Startpfad `corepack pnpm dev` ist in dieser Umgebung irreführend, weil das Root-Script intern plain `pnpm` aufruft und `pnpm` nicht im PATH liegt.
+- Status: ✅ done

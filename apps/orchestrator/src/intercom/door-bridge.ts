@@ -18,6 +18,7 @@ import { skills } from "@nera/skills";
 import { pcmToWav, wavHeader, WAV_STREAM_DATA_SIZE, amplifyPcm } from "../audio/wav.js";
 import { ConvaiSession } from "../agent/convai-ws.js";
 import { resolveQuery, renderDirectoryForAgent } from "../agent/tools.js";
+import { notifyDiscord } from "../notify/discord.js";
 
 const DEBUG_WAV = "/tmp/nera-door-last.wav"; // last greeting, for verification
 
@@ -35,6 +36,10 @@ const DOOR_GAIN = 3; // amplify Nera for the quiet intercom speaker (matches the
 const DOOR_DEBUG = process.env.DOOR_DEBUG === "1"; // verbose mic mute/capture diagnostics
 const DISPLAY_HOLD_MS = 100_000; // keep the last destination on screen this long after the call ends
 const INACTIVITY_PROMPT_MS = 10_000; // visitor silence (real speech) before Nera checks in once, then again before goodbye
+// Some Ring intercoms play a "this call may be recorded" notice to the visitor the
+// moment the call connects. Hold Nera's first words until it's done, so she doesn't
+// talk over it. Tunable live via DOOR_GREETING_DELAY_MS (ms); 0 = speak immediately.
+const GREETING_DELAY_MS = Number(process.env.DOOR_GREETING_DELAY_MS ?? 5000);
 const REAL_SPEECH_RE = /[\p{L}\p{N}]/u; // filters out filler transcripts like "..." (no letters/digits = not natural language)
 
 // Injected via ConvaiSession.sendUserMessage() — ElevenLabs treats this exactly
@@ -85,6 +90,8 @@ export function startDoorBridge(args: {
   let silenceTimer: ReturnType<typeof setTimeout> | undefined; // open-mic visitor-silence clock
   let silenceEndPending = false; // a silence-triggered goodbye is queued (a late real reply still cancels it)
   let checkedInOnce = false; // "are you still there?" asked once already (the spec's hard cap)
+  let lastVisitorText = ""; // most recent real visitor utterance — context for human-escalation pings
+  let greetingTimer: ReturnType<typeof setTimeout> | undefined; // delays Nera's start past Ring's recording notice
 
   function clearSilenceTimer() {
     if (silenceTimer) clearTimeout(silenceTimer);
@@ -173,6 +180,7 @@ export function startDoorBridge(args: {
           // per spec only natural language counts as a reply; filler must NOT
           // reset the clock (that's exactly what let the visitor drift past unnoticed).
           if (REAL_SPEECH_RE.test(t)) {
+            lastVisitorText = t; // latest real utterance — context for a human-escalation ping
             // The silence watchdog runs on a timer; STT runs a little behind the
             // speech. So the visitor can answer right as the timer fires and have
             // their transcript arrive just after the goodbye was queued. They are
@@ -283,6 +291,11 @@ export function startDoorBridge(args: {
           if (name === "human_fallback") {
             log.info("[door] human_fallback triggered");
             broker.doorState("fallback");
+            void notifyDiscord(
+              cfg.discordWebhookUrl,
+              `🔔 **Nera needs a human at the front door.**\nVisitor said: "${lastVisitorText || "(nothing captured)"}"\nPlease head to the entrance.`,
+              log,
+            );
             return respond("Let me get someone from the team to help you — just one moment!");
           }
           return respond("Unknown tool", true);
@@ -303,7 +316,16 @@ export function startDoorBridge(args: {
       callStartMs = Date.now();
       log.info("[door] call live");
       broker.doorState("active");
-      startConversation();
+      if (greetingTimer) clearTimeout(greetingTimer);
+      if (GREETING_DELAY_MS > 0) {
+        log.info(`[door] holding Nera ${GREETING_DELAY_MS}ms (let Ring's recording notice finish)…`);
+        greetingTimer = setTimeout(() => {
+          greetingTimer = undefined;
+          if (door?.inCall) startConversation();
+        }, GREETING_DELAY_MS);
+      } else {
+        startConversation();
+      }
     },
     onAudioChunk: (pcm) => {
       // half-duplex: only feed the agent while Nera isn't speaking
@@ -319,6 +341,8 @@ export function startDoorBridge(args: {
       log.info(`[door] call ended after ${dur}ms (inbound audio packets: ${info?.inboundPackets ?? "?"})`);
       convai?.close();
       convai = null;
+      if (greetingTimer) clearTimeout(greetingTimer);
+      greetingTimer = undefined;
       if (turnTimer) clearTimeout(turnTimer);
       turnTimer = undefined;
       clearSilenceTimer();

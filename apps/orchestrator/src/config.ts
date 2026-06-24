@@ -23,6 +23,10 @@ const Schema = z.object({
   GO2_FOXGLOVE_URL: z.string().optional(),
   YODECK_API_TOKEN: z.string().optional(),
   YODECK_SCREEN_ID: z.coerce.number().optional(),
+
+  // Discord webhook for live human-escalation pings (human_fallback). Optional —
+  // when unset, escalation just logs + updates the screen, no Discord post.
+  DISCORD_WEBHOOK_URL: z.string().optional(),
 });
 
 export interface Config {
@@ -41,6 +45,7 @@ export interface Config {
   go2FoxgloveUrl?: string;
   yodeckApiToken?: string;
   yodeckScreenId?: number;
+  discordWebhookUrl?: string;
 }
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
@@ -61,5 +66,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     go2FoxgloveUrl: e.GO2_FOXGLOVE_URL,
     yodeckApiToken: e.YODECK_API_TOKEN,
     yodeckScreenId: e.YODECK_SCREEN_ID,
+    discordWebhookUrl: e.DISCORD_WEBHOOK_URL,
   };
 }

@@ -61,6 +61,10 @@ export class Broker extends EventEmitter {
           // open_door tool call relayed by the kiosk (physical unlock happens server-side).
           this.emit("unlock", id, m.reqId);
           break;
+        case "human_fallback":
+          // human_fallback tool call relayed by the kiosk → server-side escalation (Discord).
+          this.emit("humanFallback", id, String(m.reason ?? ""), String(m.query ?? ""));
+          break;
         case "speech_end":
           this.emit("speechEnd", id);
           break;
