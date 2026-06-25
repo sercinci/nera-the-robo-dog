@@ -169,9 +169,15 @@ async function warmMic() {
 }
 
 // ---------- ElevenLabs conversation ----------
+// Human-readable current date + time in Vienna, so the agent always knows "now".
+const nowVienna = () =>
+  new Date().toLocaleString("en-GB", {
+    timeZone: "Europe/Vienna", weekday: "long", day: "numeric", month: "long",
+    year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+  }) + " (Europe/Vienna)";
 const sessionCommon = () => ({
   agentId,
-  dynamicVariables: { directory }, // live directory from your JSON, for disambiguation
+  dynamicVariables: { directory, current_datetime: nowVienna() }, // directory + live clock for the agent
   clientTools: {
     show_destination: async ({ query }) => {
       els.status.textContent = `Finding “${query}”…`;

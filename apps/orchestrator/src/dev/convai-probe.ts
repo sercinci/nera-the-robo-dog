@@ -10,7 +10,7 @@ dotenv.config({ path: resolve(repoRoot, ".env") });
 const cfg = loadConfig();
 
 const s = new ConvaiSession(
-  { agentId: cfg.elevenLabsAgentId!, dynamicVariables: { directory: "Places:\n- Test Room" } },
+  { agentId: cfg.elevenLabsAgentId!, dynamicVariables: { directory: "Places:\n- Test Room", current_datetime: "probe (no real clock)" } },
   {
     onReady: (m) => {
       console.log("✅ agent session READY (connection OK, no 403)");

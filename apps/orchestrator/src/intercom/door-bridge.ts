@@ -61,6 +61,18 @@ const SILENCE_GOODBYE_CUE =
   '"Thanks for stopping by — see you next time!" Then stop talking — the call ' +
   "ends automatically right after.]";
 
+/** Human-readable current date + time in Vienna, injected as a dynamic variable
+ *  so the agent always knows "now" (e.g. to reason about whether a visitor's
+ *  appointment is current). Computed fresh per call. */
+function currentDatetimeVienna(): string {
+  return (
+    new Date().toLocaleString("en-GB", {
+      timeZone: "Europe/Vienna", weekday: "long", day: "numeric", month: "long",
+      year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+    }) + " (Europe/Vienna)"
+  );
+}
+
 export function startDoorBridge(args: {
   cfg: Config;
   data: BuildingData;
@@ -168,7 +180,11 @@ export function startDoorBridge(args: {
       displayHoldTimer = undefined;
     }
     convai = new ConvaiSession(
-      { agentId: cfg.elevenLabsAgentId!, apiKey: cfg.elevenLabsApiKey, dynamicVariables: { directory } },
+      {
+        agentId: cfg.elevenLabsAgentId!,
+        apiKey: cfg.elevenLabsApiKey,
+        dynamicVariables: { directory, current_datetime: currentDatetimeVienna() },
+      },
       {
         onReady: () => log.info("[door] agent session ready"),
         onAgentResponse: (t) => {
